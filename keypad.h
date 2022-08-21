@@ -40,20 +40,7 @@
 #define KEYPAD_I2CADDR 0x49
 #define STATUSDATA_SIZE 256
 
-#define JOG_XR   'R'
-#define JOG_XL   'L'
-#define JOG_YF   'F'
-#define JOG_YB   'B'
-#define JOG_ZU   'U'
-#define JOG_ZD   'D'
-#define JOG_XRYF 'r'
-#define JOG_XRYB 'q'
-#define JOG_XLYF 's'
-#define JOG_XLYB 't'
-#define JOG_XRZU 'w'
-#define JOG_XRZD 'v'
-#define JOG_XLZU 'u'
-#define JOG_XLZD 'x'
+#define JOG_START   'R'
 
 #define MACROUP 0x18
 #define MACRODOWN 0x19
@@ -98,6 +85,17 @@ float z_coordinate;
 float a_coordinate;
 } Machine_status_packet;
 
+typedef struct Pendant_count_packet {
+int32_t uptime;
+int8_t feed_over;
+int8_t spindle_over;
+int8_t rapid_over;
+int32_t x_axis;
+int32_t y_axis;
+int32_t z_axis;
+int32_t a_axis;
+} Pendant_count_packet;
+
 typedef void (*keycode_callback_ptr)(const char c);
 typedef bool (*on_keypress_preview_ptr)(const char c, uint_fast16_t state);
 typedef void (*on_jogmode_changed_ptr)(jogmode_t jogmode);
@@ -120,6 +118,7 @@ typedef struct {
 
 extern keypad_t keypad;
 
+uint32_t protocol_version;
 
 bool keypad_init (void);
 bool keypad_enqueue_keycode (char c);

@@ -56,13 +56,17 @@ typedef struct {
     volatile uint_fast8_t tail;
 } keybuffer_t;
 
+char charbuf[127];
+
 static char buf[(STRLEN_COORDVALUE + 1) * N_AXIS];
 
 static on_state_change_ptr on_state_change;
 //static on_execute_realtime_ptr on_execute_realtime; // For real time loop insertion
 
+#define WATCHDOG_DELAY 2000
 #define SEND_STATUS_DELAY 300
 #define SEND_STATUS_JOG_DELAY 100
+#define READ_COUNT_INTERVAL 50
 
 static bool is_executing = false;
 static char *command;
@@ -75,9 +79,15 @@ static driver_reset_ptr driver_reset;
 static int16_t get_macro_char (void);
 
 static Machine_status_packet status_packet;
+static Pendant_count_packet count_packet, previous_count_packet;
+
+//can use the pointers to avoid copying data?  Ping pong buffer.
+static uint8_t *count_ptr = (uint8_t*) &count_packet;
+static uint8_t *prev_count_ptr = (uint8_t*) &previous_count_packet;
 
 static uint8_t *status_ptr = (uint8_t*) &status_packet;
 static bool jogging = false, keyreleased = true;
+static bool pendant_attached = false;
 static jogmode_t jogMode = JogMode_Fast;
 static jogmodify_t jogModify = JogModify_1;
 static jog_settings_t jog;
@@ -370,6 +380,40 @@ static status_code_t disable_lock (sys_state_t state)
     return retval;
 }
 
+static void initialize_count_info (void)
+{    
+    I2C_PendantRead (KEYPAD_I2CADDR, sizeof(Machine_status_packet), sizeof(Pendant_count_packet), count_ptr);
+    sprintf(charbuf, "X %d Y %d Z %d UT %d", count_packet.x_axis, count_packet.y_axis, count_packet.z_axis, count_packet.uptime);
+    report_message(charbuf, Message_Info);
+    previous_count_packet = count_packet;
+}
+
+static void read_count_info (void)
+{    
+    static uint32_t last_ms;
+    uint32_t ms = hal.get_elapsed_ticks();
+
+    if(ms < last_ms + READ_COUNT_INTERVAL) // don't spam the port
+    return;
+
+    I2C_PendantRead (KEYPAD_I2CADDR, sizeof(Machine_status_packet), sizeof(Pendant_count_packet), count_ptr);
+
+    //probably need something with keyreleased
+    if(keyreleased && jogging)
+        jogging = 0;
+    
+    sprintf(charbuf, "X %d Y %d Z %d UT %d", count_packet.x_axis, count_packet.y_axis, count_packet.z_axis, count_packet.uptime);
+    report_message(charbuf, Message_Info);
+
+    previous_count_packet = count_packet;
+    last_ms = ms;   
+}
+
+static void read_protocol_version (void){
+
+}
+
+
 static void send_status_info (void)
 {    
     int32_t current_position[N_AXIS]; // Copy current state of the system position variable
@@ -487,9 +531,7 @@ static void send_status_info (void)
 
 static void keypad_process_keypress (sys_state_t state)
 {
-    bool addedGcode, jogCommand = false;
     char command[35] = "", keycode = keypad_get_keycode();
-    float jog_modifier = 0;
 
     spindle_state_t spindle_state;
 
@@ -504,8 +546,10 @@ static void keypad_process_keypress (sys_state_t state)
         switch(keycode) {
 
             case '?':                                    // pendant attach
-                grbl.enqueue_realtime_command(CMD_STATUS_REPORT);
+                read_protocol_version();
                 send_status_info();
+                initialize_count_info();
+                pendant_attached = 1;
                 break;
              case MACROUP:                                   //Macro 1 up
                 //strcat(strcpy(command, "G10 L20 P0 Y"), ftoa(1.27, 5)); 
@@ -624,71 +668,11 @@ static void keypad_process_keypress (sys_state_t state)
                 break;
 
          // Jogging
-
-            case JOG_XR:                                // Jog X
-                jog_command(command, "X?F");
+            case JOG_START:                           //  Macro 5
+                read_count_info();
+                jogging = 1;
                 break;
 
-            case JOG_XL:                                // Jog -X
-                jog_command(command, "X-?F");
-                break;
-
-            case JOG_YF:                                // Jog Y
-                jog_command(command, "Y?F");
-                break;
-
-            case JOG_YB:                                // Jog -Y
-                jog_command(command, "Y-?F");
-                break;
-
-            case JOG_ZU:                                // Jog Z
-                jog_command(command, "Z?F");
-                break;
-
-            case JOG_ZD:                                // Jog -Z
-                jog_command(command, "Z-?F");
-                break;
-
-            case JOG_XRYF:                              // Jog XY
-                jog_command(command, "X?Y?F");
-                break;
-
-            case JOG_XRYB:                              // Jog X-Y
-                jog_command(command, "X?Y-?F");
-                break;
-
-            case JOG_XLYF:                              // Jog -XY
-                jog_command(command, "X-?Y?F");
-                break;
-
-            case JOG_XLYB:                              // Jog -X-Y
-                jog_command(command, "X-?Y-?F");
-                break;
-
-            case JOG_XRZU:                              // Jog XZ
-                jog_command(command, "X?Z?F");
-                break;
-
-            case JOG_XRZD:                              // Jog X-Z
-                jog_command(command, "X?Z-?F");
-                break;
-
-            case JOG_XLZU:                              // Jog -XZ
-                jog_command(command, "X-?Z?F");
-                break;
-
-            case JOG_XLZD:                              // Jog -X-Z
-                jog_command(command, "X-?Z-?F");
-                break;
-#if N_AXIS > 3
-             case MACRORAISE:                           //  Jog +A
-                jog_command(command, "A?F");
-                break;
-
-             case MACROLOWER:                           // Jog -A
-                jog_command(command, "A-?F");
-                break; 
-#else
              case MACRORAISE:                           //  Macro 5
                 execute_macro(5); 
                 break;
@@ -696,43 +680,8 @@ static void keypad_process_keypress (sys_state_t state)
              case MACROLOWER:                           // Macro 6
                 execute_macro(6); 
                 break; 
-#endif                
+               
 
-        }
-
-        if(command[0] != '\0') {
-            // add distance and speed to jog commands
-            switch(jogModify){
-                case JogModify_1:
-                    jog_modifier = 1;
-                break;
-                case JogModify_01:
-                    jog_modifier = 0.1;                    
-                break;
-                case JogModify_001:
-                    jog_modifier = 0.01;                    
-                break;                                                            
-            }
-            if((jogCommand = (command[0] == '$' && command[1] == 'J'))) switch(jogMode) {
-                case JogMode_Slow:
-                    strrepl(command, '?', ftoa(jog.slow_distance, 0));
-                    strcat(command, ftoa(jog.slow_speed*jog_modifier, 0));
-                    break;
-
-                case JogMode_Step:
-                    strrepl(command, '?', ftoa(jog.step_distance*jog_modifier, gc_state.modal.units_imperial ? 4 : 3));
-                    strcat(command, ftoa(jog.step_speed, 0));
-                    break;
-
-                default:
-                    strrepl(command, '?', ftoa(jog.fast_distance, 0));
-                    strcat(command, ftoa(jog.fast_speed*jog_modifier, 0));
-                    break;
-            }
-            if(!(jogCommand && keyreleased)) { // key still pressed? - do not execute jog command if released!             
-                addedGcode = grbl.enqueue_gcode((char *)command);
-                jogging = jogging || (jogCommand && addedGcode);
-            }
         }
     }
 }
@@ -742,11 +691,12 @@ static void onReportOptions (bool newopt)
     on_report_options(newopt);
 
     if(!newopt){
-        hal.stream.write("[PLUGIN:KEYPAD v1.3 INTERTEST]"  ASCII_EOL);
+        hal.stream.write("[PLUGIN:KEYPAD v2.0]"  ASCII_EOL);
         hal.stream.write("[PLUGIN:Macro plugin v0.02]" ASCII_EOL);
     }
 }
 
+//this ISR isn't for I2C.
 ISR_CODE bool ISR_FUNC(keypad_enqueue_keycode)(char c)
 {
     uint32_t bptr = (keybuf.head + 1) & (KEYBUF_SIZE - 1);    // Get next head pointer
@@ -777,6 +727,9 @@ ISR_CODE bool ISR_FUNC(keypad_enqueue_keycode)(char c)
 
 #if KEYPAD_ENABLE == 1
 
+//need to create a callback upon completetion of getting the count?  Contention?
+
+//this is the callback upon getting a keycode.
 ISR_CODE static void ISR_FUNC(i2c_enqueue_keycode)(char c)
 {
     uint32_t bptr = (keybuf.head + 1) & (KEYBUF_SIZE - 1);    // Get next head pointer
@@ -796,12 +749,6 @@ ISR_CODE bool ISR_FUNC(keypad_strobe_handler)(uint_fast8_t id, bool keydown)
 
     if(keydown){
         I2C_GetKeycode(KEYPAD_I2CADDR, i2c_enqueue_keycode);
-    }
-
-    else if(jogging) {
-        jogging = false;
-        grbl.enqueue_realtime_command(CMD_JOG_CANCEL);
-        keybuf.tail = keybuf.head; // flush keycode buffer
     }
     else {
         keybuf.tail = keybuf.head; // flush keycode buffer
@@ -823,6 +770,9 @@ static void keypad_poll (void)
 
     uint32_t ms = hal.get_elapsed_ticks();
 
+    if(jogging)
+        read_count_info();
+
     //check more often during manual jogging
     if (state_get() == STATE_JOG){
         if(ms < last_ms + SEND_STATUS_JOG_DELAY)
@@ -843,14 +793,12 @@ static void keypad_poll (void)
 static void keypad_poll_realtime (sys_state_t grbl_state)
 {
     on_execute_realtime(grbl_state);
-
     keypad_poll();
 }
 
 static void keypad_poll_delay (sys_state_t grbl_state)
 {
     on_execute_delay(grbl_state);
-
     keypad_poll();
 }
 
