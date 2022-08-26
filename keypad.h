@@ -30,40 +30,13 @@
 #include "grbl/settings.h"
 #endif
 
+#include "pendant.h"
+
 #if N_AXIS > 3
 #define N_MACROS 5
 #else
 #define N_MACROS 7
 #endif
-
-#define KEYBUF_SIZE 8 // must be a power of 2
-#define KEYPAD_I2CADDR 0x49
-#define STATUSDATA_SIZE 256
-
-#define JOG_START   'R'
-
-#define MACROUP 0x18
-#define MACRODOWN 0x19
-#define MACROLEFT 0x1B
-#define MACRORIGHT 0x1A
-#define MACROLOWER  0x7D
-#define MACRORAISE 0x7C
-#define MACROHOME  0x8E
-#define RESET  0x7F
-#define UNLOCK 0x80
-#define SPINON 0x81
-
-typedef enum {
-    JogMode_Fast = 0,
-    JogMode_Slow,
-    JogMode_Step
-} jogmode_t;
-
-typedef enum {
-    JogModify_1 = 0,
-    JogModify_01,
-    JogModify_001
-} jogmodify_t;
 
 typedef struct Machine_status_packet {
 uint8_t address;
@@ -90,6 +63,7 @@ int32_t uptime;
 int8_t feed_over;
 int8_t spindle_over;
 int8_t rapid_over;
+uint32_t buttons;
 int32_t x_axis;
 int32_t y_axis;
 int32_t z_axis;
@@ -117,10 +91,10 @@ typedef struct {
 } macro_settings_t;
 
 extern keypad_t keypad;
+extern jog_settings_t jog;
 
 uint32_t protocol_version;
 
 bool keypad_init (void);
-bool keypad_enqueue_keycode (char c);
 
 #endif
