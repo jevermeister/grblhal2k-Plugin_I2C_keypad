@@ -59,8 +59,7 @@ static on_state_change_ptr on_state_change;
 
 #define WATCHDOG_DELAY 2000
 #define SEND_STATUS_DELAY 300
-#define SEND_STATUS_JOG_DELAY 100
-#define READ_COUNT_INTERVAL 10
+#define SEND_STATUS_JOG_DELAY 150
 
 static bool is_executing = false;
 static char *command;
@@ -80,8 +79,10 @@ static Pendant_count_packet count_packet, previous_count_packet;
 //can use the pointers to avoid copying data?  Ping pong buffer.
 static uint8_t *count_ptr = (uint8_t*) &count_packet;
 static uint8_t *prev_count_ptr = (uint8_t*) &previous_count_packet;
-
 static uint8_t *status_ptr = (uint8_t*) &status_packet;
+
+static uint8_t pendant_button_offset = __builtin_offsetof (Pendant_memory_map, countpacket) + __builtin_offsetof ( Pendant_count_packet, buttons);
+
 static bool cmd_process = false, keyreleased = true;
 int32_t strobe_counter = 0;
 static bool pendant_attached = false;
@@ -301,8 +302,10 @@ static setting_details_t macro_setting_details = {
 
 static void count_msg (uint_fast16_t state)
 {
+    #if 0
     sprintf(charbuf, "X %d Y %d Z %d WD %d KR %d JG %d SC %d", count_packet.x_axis, count_packet.y_axis, count_packet.z_axis, watchdog_counter, keyreleased, cmd_process, strobe_counter);
     report_message(charbuf, Message_Info);
+    #endif
 }
 
 static void send_status_info (void)
@@ -312,34 +315,50 @@ static void send_status_info (void)
 
     if(ms < last_ms + 10) // don't spam the port
     return;
-    
-    status_packet.current_wcs = gc_state.modal.coord_system.id;    
 
     prepare_status_info(status_ptr);
-
     I2C_PendantWrite (KEYPAD_I2CADDR, status_ptr, sizeof(Machine_status_packet)); 
 
     last_ms = ms;   
 }
 
-static void read_count_info (sys_state_t state)
+static void clear_buttons (void)
 {    
 
+    uint8_t txbuf[5]; 
+
+    txbuf[0] = pendant_button_offset;
+    txbuf[1] = 0;
+    txbuf[2] = 0;
+    txbuf[3] = 0;
+    txbuf[4] = 0;
+
+    sprintf(charbuf, "BTN %d OFS %d", count_packet.buttons, pendant_button_offset);
+    report_message(charbuf, Message_Info);   
+
+    //figure out the address of the button register and set it to zero after it has been read.
+    //hal.delay_ms(300, NULL);
+    I2C_PendantWrite (KEYPAD_I2CADDR, txbuf, 5);
+    //hal.delay_ms(300, NULL); 
+}
+
+static void read_count_info (sys_state_t state)
+{   
     //for now just assume all is well if uptime is increasing.    
     if (count_packet.uptime > previous_count_packet.uptime)
         watchdog_counter = 0;
 
-    //sprintf(charbuf, "X %d Y %d Z %d WD %d KR %d JG %d SC %d", count_packet.x_axis, count_packet.y_axis, count_packet.z_axis, watchdog_counter, keyreleased, cmd_process, strobe_counter);
-    //report_message(charbuf, Message_Info);
+    cmd_process = process_count_info(cmd_process, prev_count_ptr, count_ptr);    
 
-    cmd_process = process_count_info(cmd_process, prev_count_ptr, count_ptr);
-    
+    //if(keyreleased) {
+    //    cmd_process = 0;
+    //    grbl.enqueue_realtime_command(CMD_JOG_CANCEL);
+    //}
 
-    if(keyreleased) {
-        cmd_process = 0;
-        grbl.enqueue_realtime_command(CMD_JOG_CANCEL);
-    }
-
+    if (count_packet.buttons > 0){
+        clear_buttons();
+        hal.delay_ms(10, NULL);
+        }
     send_status_info();
     previous_count_packet = count_packet;
 }
@@ -391,10 +410,7 @@ static void keypad_poll (void)
             last_ms = ms;
             return;
         }
-    }
-
-    //check more often during manual jogging
-    if (state_get() == STATE_JOG){
+    }else if (state_get() == STATE_JOG){ //check more often during manual jogging
         if(ms < last_ms + SEND_STATUS_JOG_DELAY)
             return;
         protocol_enqueue_rt_command(count_msg); 

@@ -57,6 +57,77 @@ char charbuf[127];
 
 static char buf[(STRLEN_COORDVALUE + 1) * N_AXIS];
 
+uint8_t halt_pressed = 0;
+uint8_t hold_pressed = 0;
+uint8_t cycle_start_pressed = 0;
+uint8_t alt_hold_pressed = 0;
+uint8_t alt_halt_pressed = 0;
+uint8_t alt_cycle_start_pressed = 0;
+
+uint8_t feed_over_up_pressed = 0;
+uint8_t feed_over_down_pressed = 0;
+uint8_t feed_over_reset_pressed = 0;
+
+uint8_t spindle_over_up_pressed = 0;
+uint8_t spindle_over_down_pressed = 0;
+uint8_t spindle_over_reset_pressed = 0;
+
+uint8_t jog_mod_pressed = 0;
+uint8_t jog_mode_pressed = 0;
+uint8_t jog_toggle_pressed = 0;
+
+uint8_t mist_pressed = 0;
+uint8_t flood_pressed = 0;
+uint8_t spindle_pressed = 0;
+uint8_t home_pressed = 0;
+
+uint8_t direction_pressed = 0;
+uint8_t previous_direction_pressed = 0;
+uint8_t keysent = 0;
+
+uint8_t alt_up_pressed = 0;
+uint8_t alt_down_pressed = 0;
+uint8_t alt_left_pressed = 0;
+uint8_t alt_right_pressed = 0;
+uint8_t alt_lower_pressed = 0;
+uint8_t alt_raise_pressed = 0;
+uint8_t alt_spindle_pressed = 0;
+uint8_t alt_home_pressed = 0;
+uint8_t alt_flood_pressed = 0;
+uint8_t alt_mist_pressed = 0;
+uint8_t reset_pressed = 0;
+uint8_t unlock_pressed = 0;
+uint8_t spinon_pressed = 0;
+
+static void assign_button_values (uint32_t buttons){
+  halt_pressed               = (( buttons & (1 << (0) ) ) ? 1 : 0 );
+  hold_pressed               = (( buttons & (1 << (1) ) ) ? 1 : 0 );
+  cycle_start_pressed        = (( buttons & (1 << (2) ) ) ? 1 : 0 );
+  spindle_pressed            = (( buttons & (1 << (3) ) ) ? 1 : 0 );
+  mist_pressed               = (( buttons & (1 << (4) ) ) ? 1 : 0 );
+  flood_pressed              = (( buttons & (1 << (5) ) ) ? 1 : 0 );
+  home_pressed               = (( buttons & (1 << (6) ) ) ? 1 : 0 );
+  spindle_over_down_pressed  = (( buttons & (1 << (7) ) ) ? 1 : 0 );
+  spindle_over_reset_pressed = (( buttons & (1 << (8) ) ) ? 1 : 0 );
+  spindle_over_up_pressed    = (( buttons & (1 << (9) ) ) ? 1 : 0 );
+  feed_over_down_pressed     = (( buttons & (1 << (10) ) ) ? 1 : 0 );
+  feed_over_reset_pressed    = (( buttons & (1 << (11) ) ) ? 1 : 0 );
+  feed_over_up_pressed       = (( buttons & (1 << (12) ) ) ? 1 : 0 );
+  alt_halt_pressed           = (( buttons & (1 << (13) ) ) ? 1 : 0 );
+  alt_hold_pressed           = (( buttons & (1 << (14) ) ) ? 1 : 0 );
+  alt_home_pressed           = (( buttons & (1 << (15) ) ) ? 1 : 0 );
+  alt_cycle_start_pressed    = (( buttons & (1 << (16) ) ) ? 1 : 0 );
+  alt_spindle_pressed        = (( buttons & (1 << (17) ) ) ? 1 : 0 );
+  alt_flood_pressed          = (( buttons & (1 << (18) ) ) ? 1 : 0 );
+  alt_mist_pressed           = (( buttons & (1 << (19) ) ) ? 1 : 0 );
+  alt_up_pressed             = (( buttons & (1 << (20) ) ) ? 1 : 0 );
+  alt_down_pressed           = (( buttons & (1 << (21) ) ) ? 1 : 0 );
+  alt_left_pressed           = (( buttons & (1 << (22) ) ) ? 1 : 0 );
+  alt_right_pressed          = (( buttons & (1 << (23) ) ) ? 1 : 0 );
+  alt_raise_pressed          = (( buttons & (1 << (24) ) ) ? 1 : 0 );
+  alt_lower_pressed          = (( buttons & (1 << (25) ) ) ? 1 : 0 );
+}
+
 // Add info about our settings for $help and enumerations.
 // Potentially used by senders for settings UI.
 
@@ -129,7 +200,7 @@ bool process_count_info (bool cmd_process, uint8_t * prev_count_ptr, uint8_t * c
     Pendant_count_packet * count_packet = (Pendant_count_packet*) count_ptr;
     Pendant_count_packet * previous_count_packet = (Pendant_count_packet*) prev_count_ptr;
 
-    char command[35] = "";
+    char command[35] = "";  
 
     static struct {
     float x;
@@ -138,36 +209,48 @@ bool process_count_info (bool cmd_process, uint8_t * prev_count_ptr, uint8_t * c
     float a;
     } deltas;
 
-    float distance;
-    float feedrate;
+    double distance;
+    double feedrate;
 
     if (cmd_process){
         
         //this reads the data and processes any changes
+        //hal.stream.write("PROCESS"  ASCII_EOL);
 
+        //sprintf(charbuf, "X %d Y %d Z %d UT %d", count_packet->x_axis, count_packet->y_axis, count_packet->z_axis, count_packet->uptime);
+        //report_message(charbuf, Message_Info);    
 
-        //sprintf(charbuf, "X %d Y %d Z %d UT %d", count_packet.x_axis, count_packet.y_axis, count_packet.z_axis, count_packet.uptime);
-        //report_message(charbuf, Message_Info);
-
-        //calculate the deltas for each axis in mm
-        deltas.x = ((float) (count_packet->x_axis - previous_count_packet->x_axis)) / 1000;
-        deltas.y = ((float) (count_packet->y_axis - previous_count_packet->y_axis)) / 1000;
-        deltas.z = ((float) (count_packet->z_axis - previous_count_packet->z_axis)) / 1000;
-        #if N_AXIS > 3
-        deltas.a = ((float) (count_packet->a_axis - previous_count_packet->a_axis)) / 1000;
-        #endif
+        //sprintf(charbuf, "X %d Y %d Z %d UT %d", count_packet->x_axis - previous_count_packet->x_axis,
+        //                                         count_packet->y_axis - previous_count_packet->y_axis, 
+        //                                         count_packet->z_axis - previous_count_packet->z_axis, 
+        //                                         count_packet->uptime - previous_count_packet->uptime );
+        //report_message(charbuf, Message_Info);        
 
         //if deltas are zero, do not start jogging.
-        if( deltas.x != 0 &&
-            deltas.y != 0 &&
-            deltas.z != 0 &&
-            deltas.a != 0 ){
+        if( count_packet->x_axis - previous_count_packet->x_axis != 0 ||
+            count_packet->y_axis - previous_count_packet->y_axis != 0 ||
+            count_packet->z_axis - previous_count_packet->z_axis != 0 || 
+            count_packet->a_axis - previous_count_packet->a_axis != 0 ){
+            
+            deltas.x = ((float)(count_packet->x_axis - previous_count_packet->x_axis))/1000;
+            deltas.y = (float)(count_packet->y_axis - previous_count_packet->y_axis)/1000;
+            deltas.z = (float)(count_packet->z_axis - previous_count_packet->z_axis)/1000;
+            #if N_AXIS > 3
+            deltas.a = (float)(count_packet->a_axis - previous_count_packet->a_axis)/1000;
+            #else
+            deltas.a = 0;
+            #endif
 
             //apply any configuration scaling
 
             //calculate feed rate so that the movement takes the sampling period to execute.
             //if the distance is longer than can be executed at max rate, limit the distance.
-            /*distance=sqrt((deltas.x *deltas.x )+(deltas.y*deltas.y)+(deltas.z*deltas.z));
+
+
+            
+            distance=sqrt((deltas.x *deltas.x ) + 
+                          (deltas.y *deltas.y ) + 
+                          (deltas.z *deltas.z ));
             feedrate = (distance/READ_COUNT_INTERVAL)*1000*60;
 
             jog_command(command, "X?");
@@ -186,21 +269,19 @@ bool process_count_info (bool cmd_process, uint8_t * prev_count_ptr, uint8_t * c
             strcat(command, "F");
             strcat(command, ftoa(feedrate, 3));
 
-            */
-
-            //sprintf(charbuf, "X %f Y %f Z %f UT %d KR %d JG %d SC %d", deltas.x, deltas.y, deltas.z, count_packet.uptime, keyreleased, cmd_process, strobe_counter);
-            //report_message(charbuf, Message_Info);    
 
             //grbl.enqueue_realtime_command(CMD_JOG_CANCEL);
             //report_message(command, Message_Info);
-            //grbl.enqueue_gcode((char *)command);
+            grbl.enqueue_gcode((char *)command);
         } else{
             //cmd_process = 0;
-            
+            grbl.enqueue_realtime_command(CMD_JOG_CANCEL);
         }
             
 
         //Now handle buttons
+        if(alt_lower_pressed == 0)
+            assign_button_values(count_packet->buttons);
         //if a button is active
 
     }//close cmd_process
@@ -213,6 +294,8 @@ void prepare_status_info (uint8_t * status_ptr)
     
     Machine_status_packet * status_packet = (Machine_status_packet*) status_ptr;
     
+    status_packet->current_wcs = gc_state.modal.coord_system.id; 
+
     int32_t current_position[N_AXIS]; // Copy current state of the system position variable
     float jog_modifier = 0;
     float print_position[N_AXIS];

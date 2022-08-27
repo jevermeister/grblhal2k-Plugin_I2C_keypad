@@ -38,6 +38,8 @@
 #define N_MACROS 7
 #endif
 
+#define READ_COUNT_INTERVAL 20
+
 typedef struct Machine_status_packet {
 uint8_t address;
 uint8_t machine_state;
@@ -46,6 +48,8 @@ uint8_t home_state;
 uint8_t feed_override;
 uint8_t spindle_override;
 uint8_t spindle_stop;
+uint8_t spindle_load;
+float spindle_power;
 int spindle_rpm;
 float feed_rate;
 coolant_state_t coolant_state;
@@ -69,6 +73,13 @@ int32_t y_axis;
 int32_t z_axis;
 int32_t a_axis;
 } Pendant_count_packet;
+
+typedef struct Pendant_memory_map {
+    Machine_status_packet statuspacket;
+    Pendant_count_packet countpacket;
+    char toolcomment[128];
+    //last 4 bytes are reserved for version info
+} Pendant_memory_map;
 
 typedef void (*keycode_callback_ptr)(const char c);
 typedef bool (*on_keypress_preview_ptr)(const char c, uint_fast16_t state);
