@@ -64,9 +64,9 @@ float a_coordinate;
 
 typedef struct Pendant_count_packet {
 int32_t uptime;
-int8_t feed_over;
-int8_t spindle_over;
-int8_t rapid_over;
+uint8_t feed_over;
+uint8_t spindle_over;
+uint8_t rapid_over;
 uint32_t buttons;
 int32_t x_axis;
 int32_t y_axis;
@@ -107,5 +107,6 @@ extern jog_settings_t jog;
 uint32_t protocol_version;
 
 bool keypad_init (void);
+void execute_macro (uint8_t macro);
 
 #endif

@@ -55,78 +55,42 @@ static jogmodify_t jogModify = JogModify_1;
 
 char charbuf[127];
 
+typedef struct {
+    char buf[KEYBUF_SIZE];
+    volatile uint_fast8_t head;
+    volatile uint_fast8_t tail;
+} keybuffer_t;
+
+static keybuffer_t keybuf = {0};
+
 static char buf[(STRLEN_COORDVALUE + 1) * N_AXIS];
 
-uint8_t halt_pressed = 0;
-uint8_t hold_pressed = 0;
-uint8_t cycle_start_pressed = 0;
-uint8_t alt_hold_pressed = 0;
-uint8_t alt_halt_pressed = 0;
-uint8_t alt_cycle_start_pressed = 0;
-
-uint8_t feed_over_up_pressed = 0;
-uint8_t feed_over_down_pressed = 0;
-uint8_t feed_over_reset_pressed = 0;
-
-uint8_t spindle_over_up_pressed = 0;
-uint8_t spindle_over_down_pressed = 0;
-uint8_t spindle_over_reset_pressed = 0;
-
-uint8_t jog_mod_pressed = 0;
-uint8_t jog_mode_pressed = 0;
-uint8_t jog_toggle_pressed = 0;
-
-uint8_t mist_pressed = 0;
-uint8_t flood_pressed = 0;
-uint8_t spindle_pressed = 0;
-uint8_t home_pressed = 0;
-
-uint8_t direction_pressed = 0;
-uint8_t previous_direction_pressed = 0;
-uint8_t keysent = 0;
-
-uint8_t alt_up_pressed = 0;
-uint8_t alt_down_pressed = 0;
-uint8_t alt_left_pressed = 0;
-uint8_t alt_right_pressed = 0;
-uint8_t alt_lower_pressed = 0;
-uint8_t alt_raise_pressed = 0;
-uint8_t alt_spindle_pressed = 0;
-uint8_t alt_home_pressed = 0;
-uint8_t alt_flood_pressed = 0;
-uint8_t alt_mist_pressed = 0;
-uint8_t reset_pressed = 0;
-uint8_t unlock_pressed = 0;
-uint8_t spinon_pressed = 0;
-
-static void assign_button_values (uint32_t buttons){
-  halt_pressed               = (( buttons & (1 << (0) ) ) ? 1 : 0 );
-  hold_pressed               = (( buttons & (1 << (1) ) ) ? 1 : 0 );
-  cycle_start_pressed        = (( buttons & (1 << (2) ) ) ? 1 : 0 );
-  spindle_pressed            = (( buttons & (1 << (3) ) ) ? 1 : 0 );
-  mist_pressed               = (( buttons & (1 << (4) ) ) ? 1 : 0 );
-  flood_pressed              = (( buttons & (1 << (5) ) ) ? 1 : 0 );
-  home_pressed               = (( buttons & (1 << (6) ) ) ? 1 : 0 );
-  spindle_over_down_pressed  = (( buttons & (1 << (7) ) ) ? 1 : 0 );
-  spindle_over_reset_pressed = (( buttons & (1 << (8) ) ) ? 1 : 0 );
-  spindle_over_up_pressed    = (( buttons & (1 << (9) ) ) ? 1 : 0 );
-  feed_over_down_pressed     = (( buttons & (1 << (10) ) ) ? 1 : 0 );
-  feed_over_reset_pressed    = (( buttons & (1 << (11) ) ) ? 1 : 0 );
-  feed_over_up_pressed       = (( buttons & (1 << (12) ) ) ? 1 : 0 );
-  alt_halt_pressed           = (( buttons & (1 << (13) ) ) ? 1 : 0 );
-  alt_hold_pressed           = (( buttons & (1 << (14) ) ) ? 1 : 0 );
-  alt_home_pressed           = (( buttons & (1 << (15) ) ) ? 1 : 0 );
-  alt_cycle_start_pressed    = (( buttons & (1 << (16) ) ) ? 1 : 0 );
-  alt_spindle_pressed        = (( buttons & (1 << (17) ) ) ? 1 : 0 );
-  alt_flood_pressed          = (( buttons & (1 << (18) ) ) ? 1 : 0 );
-  alt_mist_pressed           = (( buttons & (1 << (19) ) ) ? 1 : 0 );
-  alt_up_pressed             = (( buttons & (1 << (20) ) ) ? 1 : 0 );
-  alt_down_pressed           = (( buttons & (1 << (21) ) ) ? 1 : 0 );
-  alt_left_pressed           = (( buttons & (1 << (22) ) ) ? 1 : 0 );
-  alt_right_pressed          = (( buttons & (1 << (23) ) ) ? 1 : 0 );
-  alt_raise_pressed          = (( buttons & (1 << (24) ) ) ? 1 : 0 );
-  alt_lower_pressed          = (( buttons & (1 << (25) ) ) ? 1 : 0 );
-}
+#define HALT_PRESSED            (1 << (0) )
+#define HOLD_PRESSED            (1 << (1) )
+#define CYCLE_START_PRESSED     (1 << (2) )
+#define SPINDLE_PRESSED         (1 << (3) )
+#define MIST_PRESSED            (1 << (4) )
+#define FLOOD_PRESSED           (1 << (5) )
+#define HOME_PRESSED            (1 << (6) )
+#define SPINDLE_OVER_DOWN_PRESSED (1 << (7) )
+#define SPINDLE_OVER_RESET_PRESSED  (1 << (8) )
+#define SPINDLE_OVER_UP_PRESSED (1 << (9) )
+#define FEED_OVER_DOWN_PRESSED  (1 << (10) )
+#define FEED_OVER_RESET_PRESSED (1 << (11) )
+#define FEED_OVER_UP_PRESSED    (1 << (12) )
+#define ALT_HALT_PRESSED        (1 << (13) )
+#define ALT_HOLD_PRESSED        (1 << (14) )
+#define ALT_HOME_PRESSED        (1 << (15) )
+#define ALT_CYCLE_START_PRESSED (1 << (16) )
+#define ALT_SPINDLE_PRESSED     (1 << (17) )
+#define ALT_FLOOD_PRESSED       (1 << (18) )
+#define ALT_MIST_PRESSED        (1 << (19) )
+#define ALT_UP_PRESSED          (1 << (20) )
+#define ALT_DOWN_PRESSED        (1 << (21) )
+#define ALT_LEFT_PRESSED        (1 << (22) )
+#define ALT_RIGHT_PRESSED       (1 << (23) )
+#define ALT_RAISE_PRESSED       (1 << (24) )
+#define ALT_LOWER_PRESSED       (1 << (25) )
 
 // Add info about our settings for $help and enumerations.
 // Potentially used by senders for settings UI.
@@ -192,101 +156,6 @@ static status_code_t disable_lock (sys_state_t state)
     } // Otherwise, no effect.
 
     return retval;
-}
-
-bool process_count_info (bool cmd_process, uint8_t * prev_count_ptr, uint8_t * count_ptr)
-{    
-
-    Pendant_count_packet * count_packet = (Pendant_count_packet*) count_ptr;
-    Pendant_count_packet * previous_count_packet = (Pendant_count_packet*) prev_count_ptr;
-
-    char command[35] = "";  
-
-    static struct {
-    float x;
-    float y;
-    float z;
-    float a;
-    } deltas;
-
-    double distance;
-    double feedrate;
-
-    if (cmd_process){
-        
-        //this reads the data and processes any changes
-        //hal.stream.write("PROCESS"  ASCII_EOL);
-
-        //sprintf(charbuf, "X %d Y %d Z %d UT %d", count_packet->x_axis, count_packet->y_axis, count_packet->z_axis, count_packet->uptime);
-        //report_message(charbuf, Message_Info);    
-
-        //sprintf(charbuf, "X %d Y %d Z %d UT %d", count_packet->x_axis - previous_count_packet->x_axis,
-        //                                         count_packet->y_axis - previous_count_packet->y_axis, 
-        //                                         count_packet->z_axis - previous_count_packet->z_axis, 
-        //                                         count_packet->uptime - previous_count_packet->uptime );
-        //report_message(charbuf, Message_Info);        
-
-        //if deltas are zero, do not start jogging.
-        if( count_packet->x_axis - previous_count_packet->x_axis != 0 ||
-            count_packet->y_axis - previous_count_packet->y_axis != 0 ||
-            count_packet->z_axis - previous_count_packet->z_axis != 0 || 
-            count_packet->a_axis - previous_count_packet->a_axis != 0 ){
-            
-            deltas.x = ((float)(count_packet->x_axis - previous_count_packet->x_axis))/1000;
-            deltas.y = (float)(count_packet->y_axis - previous_count_packet->y_axis)/1000;
-            deltas.z = (float)(count_packet->z_axis - previous_count_packet->z_axis)/1000;
-            #if N_AXIS > 3
-            deltas.a = (float)(count_packet->a_axis - previous_count_packet->a_axis)/1000;
-            #else
-            deltas.a = 0;
-            #endif
-
-            //apply any configuration scaling
-
-            //calculate feed rate so that the movement takes the sampling period to execute.
-            //if the distance is longer than can be executed at max rate, limit the distance.
-
-
-            
-            distance=sqrt((deltas.x *deltas.x ) + 
-                          (deltas.y *deltas.y ) + 
-                          (deltas.z *deltas.z ));
-            feedrate = (distance/READ_COUNT_INTERVAL)*1000*60;
-
-            jog_command(command, "X?");
-            strrepl(command, '?', ftoa(deltas.x, 3));
-            strcat(command, "Y?");
-            strrepl(command, '?', ftoa(deltas.y, 3));
-            strcat(command, "Z?");
-            strrepl(command, '?', ftoa(deltas.z, 3));    
-
-            #if N_AXIS > 3
-                strcat(command, "A?");
-                strrepl(command, '?', ftoa(deltas.a, 3));
-                //need to ensure feed isn't zero for A only movement
-            #endif
-
-            strcat(command, "F");
-            strcat(command, ftoa(feedrate, 3));
-
-
-            //grbl.enqueue_realtime_command(CMD_JOG_CANCEL);
-            //report_message(command, Message_Info);
-            grbl.enqueue_gcode((char *)command);
-        } else{
-            //cmd_process = 0;
-            grbl.enqueue_realtime_command(CMD_JOG_CANCEL);
-        }
-            
-
-        //Now handle buttons
-        if(alt_lower_pressed == 0)
-            assign_button_values(count_packet->buttons);
-        //if a button is active
-
-    }//close cmd_process
-
-    return cmd_process;
 }
 
 void prepare_status_info (uint8_t * status_ptr)
@@ -409,20 +278,37 @@ void prepare_status_info (uint8_t * status_ptr)
     last_ms = ms;   
 }
 
-void process_keycode (char keycode)
+// Returns 0 if no keycode enqueued
+static char keypad_get_keycode (void)
 {
-    char command[35] = ""; 
+    uint32_t data = 0, bptr = keybuf.tail;
+
+    if(bptr != keybuf.head) {
+        data = keybuf.buf[bptr++];               // Get next character, increment tmp pointer
+        keybuf.tail = bptr & (KEYBUF_SIZE - 1);  // and update pointer
+    }
+
+    return data;
+}
+
+static void process_keycode (sys_state_t state)
+{
+    char command[35] = "", keycode = keypad_get_keycode();
 
     spindle_state_t spindle_state;
 
+    if(state == STATE_ESTOP)
+        return;
+
     if(keycode) {
+
+        if(keypad.on_keypress_preview && keypad.on_keypress_preview(keycode, state))
+            return;
 
         switch(keycode) {
 
             case '?':                                    // pendant attach
-                //read_protocol_version();
-                //initialize_count_info();
-                //pendant_attached = 1;
+                grbl.enqueue_realtime_command(CMD_STATUS_REPORT);
                 break;
              case MACROUP:                                   //Macro 1 up
                 //strcat(strcpy(command, "G10 L20 P0 Y"), ftoa(1.27, 5)); 
@@ -527,7 +413,7 @@ void process_keycode (char keycode)
             case CMD_OVERRIDE_SPINDLE_FINE_PLUS:
             case CMD_OVERRIDE_SPINDLE_FINE_MINUS:
             case CMD_OVERRIDE_SPINDLE_STOP:
-                enqueue_accessory_override(keycode);            
+                enqueue_accessory_override(keycode);               
                 break;
 
             case CMD_SAFETY_DOOR:
@@ -537,15 +423,216 @@ void process_keycode (char keycode)
                 grbl.enqueue_realtime_command(keycode);
                 break;
 
+         // Jogging now handled with counts.
+
              case MACRORAISE:                           //  Macro 5
                 execute_macro(5); 
                 break;
 
              case MACROLOWER:                           // Macro 6
                 execute_macro(6); 
-                break; 
-               
+                break;             
 
         }
     }
+
+    grbl.enqueue_gcode((char *)command);
+
+}
+
+static void i2c_enqueue_keycode (char c)
+{
+    uint32_t bptr = (keybuf.head + 1) & (KEYBUF_SIZE - 1);    // Get next head pointer
+
+    if(bptr != keybuf.tail) {           // If not buffer full
+        keybuf.buf[keybuf.head] = c;    // add data to buffer
+        keybuf.head = bptr;             // and update pointer
+        // Tell foreground process to process keycode
+        protocol_enqueue_rt_command(process_keycode);
+    }
+}
+
+bool process_count_info (uint8_t * prev_count_ptr, uint8_t * count_ptr)
+{    
+
+    bool cmd = 0;
+    
+    Pendant_count_packet * count_packet = (Pendant_count_packet*) count_ptr;
+    Pendant_count_packet * previous_count_packet = (Pendant_count_packet*) prev_count_ptr;
+
+    char command[35] = ""; 
+
+    static struct {
+    float x;
+    float y;
+    float z;
+    float a;
+    } deltas;
+
+    double distance;
+    double feedrate;
+        
+        //this reads the data and processes any changes
+        //hal.stream.write("PROCESS"  ASCII_EOL);
+
+        //sprintf(charbuf, "X %d Y %d Z %d UT %d", count_packet->x_axis, count_packet->y_axis, count_packet->z_axis, count_packet->uptime);
+        //report_message(charbuf, Message_Info);    
+
+        //sprintf(charbuf, "X %d Y %d Z %d UT %d", count_packet->x_axis - previous_count_packet->x_axis,
+        //                                         count_packet->y_axis - previous_count_packet->y_axis, 
+        //                                         count_packet->z_axis - previous_count_packet->z_axis, 
+        //                                         count_packet->uptime - previous_count_packet->uptime );
+        //report_message(charbuf, Message_Info);        
+
+        //if deltas are zero, do not start jogging.
+        if( count_packet->x_axis - previous_count_packet->x_axis != 0 ||
+            count_packet->y_axis - previous_count_packet->y_axis != 0 ||
+            count_packet->z_axis - previous_count_packet->z_axis != 0 || 
+            count_packet->a_axis - previous_count_packet->a_axis != 0 ){
+            
+            deltas.x = (float)(count_packet->x_axis - previous_count_packet->x_axis)/1000;
+            deltas.y = (float)(count_packet->y_axis - previous_count_packet->y_axis)/1000;
+            deltas.z = (float)(count_packet->z_axis - previous_count_packet->z_axis)/1000;
+            #if N_AXIS > 3
+            deltas.a = (float)(count_packet->a_axis - previous_count_packet->a_axis)/1000;
+            #else
+            deltas.a = 0;
+            #endif
+
+            //apply any configuration scaling
+
+            //calculate feed rate so that the movement takes the sampling period to execute.
+            //if the distance is longer than can be executed at max rate, limit the distance.
+
+
+            
+            distance=sqrt((deltas.x *deltas.x ) + 
+                          (deltas.y *deltas.y ) + 
+                          (deltas.z *deltas.z ));
+            feedrate = (distance/READ_COUNT_INTERVAL)*1000*60;
+
+            jog_command(command, "X?");
+            strrepl(command, '?', ftoa(deltas.x, 3));
+            strcat(command, "Y?");
+            strrepl(command, '?', ftoa(deltas.y, 3));
+            strcat(command, "Z?");
+            strrepl(command, '?', ftoa(deltas.z, 3));    
+
+            #if N_AXIS > 3
+                strcat(command, "A?");
+                strrepl(command, '?', ftoa(deltas.a, 3));
+                //need to ensure feed isn't zero for A only movement
+            #endif
+
+            strcat(command, "F");
+            strcat(command, ftoa(feedrate, 3));
+
+
+            //grbl.enqueue_realtime_command(CMD_JOG_CANCEL);
+            //report_message(command, Message_Info);
+            grbl.enqueue_gcode((char *)command);
+            cmd = 1;
+        } else{
+            grbl.enqueue_realtime_command(CMD_JOG_CANCEL);
+        }
+
+        //deal with overrides
+        if( count_packet->feed_over != sys.override.feed_rate ||
+            count_packet->spindle_over != sys.override.spindle_rpm ||
+            count_packet->rapid_over != sys.override.rapid_rate){
+
+        sprintf(charbuf, "PEN F %d S %d R %d", count_packet->feed_over, count_packet->spindle_over, count_packet->rapid_over);
+        report_message(charbuf, Message_Info);
+        sprintf(charbuf, "SYS F %d S %d R %d", sys.override.feed_rate, sys.override.spindle_rpm, sys.override.rapid_rate);
+        report_message(charbuf, Message_Info);
+
+            if(count_packet->feed_over > sys.override.feed_rate){
+                if(count_packet->feed_over - sys.override.feed_rate >= 10)
+                    enqueue_feed_override(CMD_OVERRIDE_FEED_COARSE_PLUS);
+                else
+                    enqueue_feed_override(CMD_OVERRIDE_FEED_FINE_PLUS);
+            } else if (count_packet->feed_over < sys.override.feed_rate){
+                if(sys.override.feed_rate - count_packet->feed_over >= 10)
+                    enqueue_feed_override(CMD_OVERRIDE_FEED_COARSE_MINUS);
+                else
+                    enqueue_feed_override(CMD_OVERRIDE_FEED_FINE_MINUS);                
+            }
+
+            if(count_packet->spindle_over > sys.override.spindle_rpm){
+                if(count_packet->spindle_over - sys.override.spindle_rpm >= 10)
+                    enqueue_accessory_override(CMD_OVERRIDE_SPINDLE_COARSE_PLUS);
+                else
+                    enqueue_accessory_override(CMD_OVERRIDE_SPINDLE_FINE_PLUS);
+            } else if (count_packet->spindle_over < sys.override.spindle_rpm){
+                if(sys.override.spindle_rpm - count_packet->spindle_over >= 10)
+                    enqueue_accessory_override(CMD_OVERRIDE_SPINDLE_COARSE_MINUS);
+                else
+                    enqueue_accessory_override(CMD_OVERRIDE_SPINDLE_FINE_MINUS);                
+            }                
+            //sys.override.rapid_rate
+
+            cmd = 1;
+        }        
+            
+        if (count_packet->buttons > 0){
+            //assign_button_values(count_packet->buttons);
+            if(count_packet->buttons & HALT_PRESSED)
+                i2c_enqueue_keycode(RESET);
+            if(count_packet->buttons & HOLD_PRESSED)
+                i2c_enqueue_keycode(CMD_FEED_HOLD_LEGACY);
+            if(count_packet->buttons & CYCLE_START_PRESSED)
+                i2c_enqueue_keycode(CMD_CYCLE_START_LEGACY);
+            if(count_packet->buttons & SPINDLE_PRESSED)
+                i2c_enqueue_keycode(CMD_OVERRIDE_SPINDLE_STOP);  
+            if(count_packet->buttons & MIST_PRESSED)
+                i2c_enqueue_keycode('M');  
+            if(count_packet->buttons & FLOOD_PRESSED)
+                i2c_enqueue_keycode('C');  
+            if(count_packet->buttons & HOME_PRESSED)
+                i2c_enqueue_keycode('H');  
+            //if(count_packet->buttons & SPINDLE_OVER_DOWN_PRESSED)
+            //    i2c_enqueue_keycode();  
+            //if(count_packet->buttons & SPINDLE_OVER_RESET_PRESSED)
+            //    i2c_enqueue_keycode();  
+            //if(count_packet->buttons & SPINDLE_OVER_UP_PRESSED)
+            //    i2c_enqueue_keycode();
+            //if(count_packet->buttons & FEED_OVER_DOWN_PRESSED)
+            //    i2c_enqueue_keycode();  
+            //if(count_packet->buttons & FEED_OVER_RESET_PRESSED)
+            //    i2c_enqueue_keycode();  
+            //if(count_packet->buttons & FEED_OVER_UP_PRESSED)
+            //    i2c_enqueue_keycode();
+            if(count_packet->buttons & ALT_HALT_PRESSED)
+                i2c_enqueue_keycode(0);  
+            if(count_packet->buttons & ALT_HOLD_PRESSED)
+                i2c_enqueue_keycode(RESET);  
+            if(count_packet->buttons & ALT_HOME_PRESSED)
+                i2c_enqueue_keycode(MACROHOME);  
+            if(count_packet->buttons & ALT_CYCLE_START_PRESSED)
+                i2c_enqueue_keycode(UNLOCK);  
+            if(count_packet->buttons & ALT_SPINDLE_PRESSED)
+                i2c_enqueue_keycode(SPINON);  
+            if(count_packet->buttons & ALT_FLOOD_PRESSED)
+                i2c_enqueue_keycode('h');  
+            if(count_packet->buttons & ALT_MIST_PRESSED)
+                i2c_enqueue_keycode('m');    
+            if(count_packet->buttons & ALT_UP_PRESSED)
+                i2c_enqueue_keycode(MACROUP);  
+            if(count_packet->buttons & ALT_DOWN_PRESSED)
+                i2c_enqueue_keycode(MACRODOWN);  
+            if(count_packet->buttons & ALT_LEFT_PRESSED)
+                i2c_enqueue_keycode(MACROLEFT);  
+            if(count_packet->buttons & ALT_RIGHT_PRESSED)
+                i2c_enqueue_keycode(MACRORIGHT);  
+            if(count_packet->buttons & ALT_RAISE_PRESSED)
+                i2c_enqueue_keycode(MACRORAISE);  
+            if(count_packet->buttons & ALT_LOWER_PRESSED)
+                i2c_enqueue_keycode(MACROLOWER);
+
+            cmd = 1;                                                                                                                                                                                                                                                                                                                                                                                    
+        }
+            
+        //if a button is active
+
+    return cmd;
 }

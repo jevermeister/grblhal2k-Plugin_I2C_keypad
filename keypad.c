@@ -211,7 +211,7 @@ static void run_macro (uint_fast16_t state)
 // is registered as a single run task to be started from the foreground process.
 // TODO: add debounce?
 //probably don't need this to be ISR for I2C macros.
-static void execute_macro (uint8_t macro)
+void execute_macro (uint8_t macro)
 {
     if(!is_executing && state_get() == STATE_IDLE) {
         is_executing = true;
@@ -333,13 +333,11 @@ static void clear_buttons (void)
     txbuf[3] = 0;
     txbuf[4] = 0;
 
-    sprintf(charbuf, "BTN %d OFS %d", count_packet.buttons, pendant_button_offset);
-    report_message(charbuf, Message_Info);   
+    //sprintf(charbuf, "BTN %d OFS %d", count_packet.buttons, pendant_button_offset);
+    //report_message(charbuf, Message_Info);   
 
     //figure out the address of the button register and set it to zero after it has been read.
-    //hal.delay_ms(300, NULL);
     I2C_PendantWrite (KEYPAD_I2CADDR, txbuf, 5);
-    //hal.delay_ms(300, NULL); 
 }
 
 static void read_count_info (sys_state_t state)
@@ -348,17 +346,12 @@ static void read_count_info (sys_state_t state)
     if (count_packet.uptime > previous_count_packet.uptime)
         watchdog_counter = 0;
 
-    cmd_process = process_count_info(cmd_process, prev_count_ptr, count_ptr);    
-
-    //if(keyreleased) {
-    //    cmd_process = 0;
-    //    grbl.enqueue_realtime_command(CMD_JOG_CANCEL);
-    //}
+    cmd_process = process_count_info(prev_count_ptr, count_ptr);    
 
     if (count_packet.buttons > 0){
         clear_buttons();
         hal.delay_ms(10, NULL);
-        }
+    }
     send_status_info();
     previous_count_packet = count_packet;
 }

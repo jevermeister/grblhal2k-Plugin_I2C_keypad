@@ -67,9 +67,8 @@ typedef enum {
     JogModify_001
 } jogmodify_t;
 
-bool process_count_info (bool cmd_process, uint8_t * prev_count_ptr, uint8_t * count_ptr);
+bool process_count_info (uint8_t * prev_count_ptr, uint8_t * count_ptr);
 void prepare_status_info (uint8_t * status_ptr);
-void process_keycode (char keycode);
 
 jog_settings_t jog;
 
