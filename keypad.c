@@ -331,10 +331,7 @@ static void clear_buttons (void)
     txbuf[1] = 0;
     txbuf[2] = 0;
     txbuf[3] = 0;
-    txbuf[4] = 0;
-
-    //sprintf(charbuf, "BTN %d OFS %d", count_packet.buttons, pendant_button_offset);
-    //report_message(charbuf, Message_Info);   
+    txbuf[4] = 0;  
 
     //figure out the address of the button register and set it to zero after it has been read.
     I2C_PendantWrite (KEYPAD_I2CADDR, txbuf, 5);
@@ -462,16 +459,6 @@ static void keypad_poll_delay (sys_state_t grbl_state)
     keypad_poll();
 }
 
-static void jogmode_changed (jogmode_t jogMode)
-{
-    keypad_poll();
-}
-
-static void jogmodify_changed (jogmodify_t jogModify)
-{
-    keypad_poll();
-}
-
 static void warning_msg (uint_fast16_t state)
 {
     report_message("Pendant plugin failed to initialize!", Message_Warning);
@@ -501,12 +488,6 @@ bool keypad_init (void)
 
         settings_register(&keypad_setting_details); 
         settings_register(&macro_setting_details);     
-        
-        on_jogmode_changed = keypad.on_jogmode_changed;
-        keypad.on_jogmode_changed = jogmode_changed;
-
-        on_jogmodify_changed = keypad.on_jogmodify_changed;
-        keypad.on_jogmodify_changed = jogmodify_changed;
 
         on_state_change = grbl.on_state_change;             // Subscribe to the state changed event by saving away the original
         grbl.on_state_change = onStateChanged;              // function pointer and adding ours to the chain.   

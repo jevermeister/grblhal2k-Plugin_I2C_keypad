@@ -38,7 +38,7 @@
 #define N_MACROS 7
 #endif
 
-#define READ_COUNT_INTERVAL 20
+#define READ_COUNT_INTERVAL 60
 
 typedef struct Machine_status_packet {
 uint8_t address;

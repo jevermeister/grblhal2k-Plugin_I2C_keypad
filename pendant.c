@@ -370,23 +370,13 @@ static void process_keycode (sys_state_t state)
                     stream_mpg_enable(hal.stream.type != StreamType_MPG);
                 break;
 
-            case '0':
-            case '1':
-            case '2':                                   // Set jog mode
-                jogMode = (jogmode_t)(keycode - '0');
-                break;
-
             case 'h':                                   // "toggle" jog mode
                 jogMode = jogMode == JogMode_Step ? JogMode_Fast : (jogMode == JogMode_Fast ? JogMode_Slow : JogMode_Step);
-                if(keypad.on_jogmode_changed)
-                    keypad.on_jogmode_changed(jogMode);
                 break;
-
             case 'm':                                   // cycle jog modifier
                 jogModify = jogModify == JogModify_001 ? JogModify_1 : (jogModify == JogModify_1 ? JogModify_01 : JogModify_001);
-                if(keypad.on_jogmodify_changed)
-                    keypad.on_jogmodify_changed(jogModify);
                 break;
+
             case 'H':                                   // Home axes
                 strcpy(command, "$H");
                 break;
@@ -455,7 +445,7 @@ static void i2c_enqueue_keycode (char c)
 bool process_count_info (uint8_t * prev_count_ptr, uint8_t * count_ptr)
 {    
 
-    bool cmd = 0;
+    bool cmd = 1;
     
     Pendant_count_packet * count_packet = (Pendant_count_packet*) count_ptr;
     Pendant_count_packet * previous_count_packet = (Pendant_count_packet*) prev_count_ptr;
@@ -499,13 +489,13 @@ bool process_count_info (uint8_t * prev_count_ptr, uint8_t * count_ptr)
             deltas.a = 0;
             #endif
 
+            //sprintf(charbuf, "X %s UT %d", ftoa(deltas.x, 8), count_packet->uptime - previous_count_packet->uptime);
+            //report_message(charbuf, Message_Info);   
+
             //apply any configuration scaling
 
             //calculate feed rate so that the movement takes the sampling period to execute.
-            //if the distance is longer than can be executed at max rate, limit the distance.
-
-
-            
+            //if the distance is longer than can be executed at max rate, limit the distance.            
             distance=sqrt((deltas.x *deltas.x ) + 
                           (deltas.y *deltas.y ) + 
                           (deltas.z *deltas.z ));
@@ -540,11 +530,12 @@ bool process_count_info (uint8_t * prev_count_ptr, uint8_t * count_ptr)
         if( count_packet->feed_over != sys.override.feed_rate ||
             count_packet->spindle_over != sys.override.spindle_rpm ||
             count_packet->rapid_over != sys.override.rapid_rate){
-
+#if 0
         sprintf(charbuf, "PEN F %d S %d R %d", count_packet->feed_over, count_packet->spindle_over, count_packet->rapid_over);
         report_message(charbuf, Message_Info);
         sprintf(charbuf, "SYS F %d S %d R %d", sys.override.feed_rate, sys.override.spindle_rpm, sys.override.rapid_rate);
         report_message(charbuf, Message_Info);
+#endif        
 
             if(count_packet->feed_over > sys.override.feed_rate){
                 if(count_packet->feed_over - sys.override.feed_rate >= 10)
@@ -585,9 +576,9 @@ bool process_count_info (uint8_t * prev_count_ptr, uint8_t * count_ptr)
             if(count_packet->buttons & SPINDLE_PRESSED)
                 i2c_enqueue_keycode(CMD_OVERRIDE_SPINDLE_STOP);  
             if(count_packet->buttons & MIST_PRESSED)
-                i2c_enqueue_keycode('M');  
+                i2c_enqueue_keycode('m');  
             if(count_packet->buttons & FLOOD_PRESSED)
-                i2c_enqueue_keycode('C');  
+                i2c_enqueue_keycode('h');  
             if(count_packet->buttons & HOME_PRESSED)
                 i2c_enqueue_keycode('H');  
             //if(count_packet->buttons & SPINDLE_OVER_DOWN_PRESSED)
@@ -613,9 +604,9 @@ bool process_count_info (uint8_t * prev_count_ptr, uint8_t * count_ptr)
             if(count_packet->buttons & ALT_SPINDLE_PRESSED)
                 i2c_enqueue_keycode(SPINON);  
             if(count_packet->buttons & ALT_FLOOD_PRESSED)
-                i2c_enqueue_keycode('h');  
+                i2c_enqueue_keycode('C');  
             if(count_packet->buttons & ALT_MIST_PRESSED)
-                i2c_enqueue_keycode('m');    
+                i2c_enqueue_keycode('M');    
             if(count_packet->buttons & ALT_UP_PRESSED)
                 i2c_enqueue_keycode(MACROUP);  
             if(count_packet->buttons & ALT_DOWN_PRESSED)
