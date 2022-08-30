@@ -115,27 +115,33 @@ static const setting_descr_t keypad_settings_descr[] = {
 #endif
 
 static const setting_detail_t macro_settings[] = {
-    { Setting_UserDefined_0, Group_Jogging, "Macro 1 UP", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[0].data, NULL, NULL },
-    { Setting_UserDefined_1, Group_Jogging, "Macro 2 RIGHT", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[1].data, NULL, NULL },
-    { Setting_UserDefined_2, Group_Jogging, "Macro 3 DOWN", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[2].data, NULL, NULL },
-    { Setting_UserDefined_3, Group_Jogging, "Macro 4 LEFT", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[3].data, NULL, NULL },
-    { Setting_UserDefined_4, Group_Jogging, "Macro 5 SPINDLE", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[4].data, NULL, NULL },
+    { Setting_Pendant_0, Group_Jogging, "Macro 1 UP", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[0].data, NULL, NULL },
+    { Setting_Pendant_1, Group_Jogging, "Macro 2 RIGHT", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[1].data, NULL, NULL },
+    { Setting_Pendant_2, Group_Jogging, "Macro 3 DOWN", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[2].data, NULL, NULL },
+    { Setting_Pendant_3, Group_Jogging, "Macro 4 LEFT", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[3].data, NULL, NULL },
+    { Setting_Pendant_4, Group_Jogging, "Macro 5 SPINDLE", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[4].data, NULL, NULL },
 #if N_MACROS > 5
-    { Setting_UserDefined_5, Group_Jogging, "Macro 6 RAISE", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[5].data, NULL, NULL },
-    { Setting_UserDefined_6, Group_Jogging, "Macro 7 LOWER", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[6].data, NULL, NULL },
+    { Setting_Pendant_5, Group_Jogging, "Macro 6 RAISE", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[5].data, NULL, NULL },
+    { Setting_Pendant_6, Group_Jogging, "Macro 7 LOWER", NULL, Format_String, "x(127)", "0", "127", Setting_NonCore, &macro_plugin_settings.macro[6].data, NULL, NULL },
 #endif
 };
 
+//add settings for:
+//Disconnect action (Hold, Halt, None)
+//Jog limits for X Y Z
+//limit jog speed when unhomed.
+//separate accel values per jog mode.
+
 #ifndef NO_SETTINGS_DESCRIPTIONS
 static const setting_descr_t macro_settings_descr[] = {
-    { Setting_UserDefined_0, "Macro content for macro 1, separate blocks (lines) with the vertical bar character |." },
-    { Setting_UserDefined_1, "Macro content for macro 2, separate blocks (lines) with the vertical bar character |." },
-    { Setting_UserDefined_2, "Macro content for macro 3, separate blocks (lines) with the vertical bar character |." },
-    { Setting_UserDefined_3, "Macro content for macro 4, separate blocks (lines) with the vertical bar character |." },
-    { Setting_UserDefined_4, "Spindle Macro.  Use to start spindle, or turn it off if running." },
+    { Setting_Pendant_0, "Macro content for macro 1, separate blocks (lines) with the vertical bar character |." },
+    { Setting_Pendant_1, "Macro content for macro 2, separate blocks (lines) with the vertical bar character |." },
+    { Setting_Pendant_2, "Macro content for macro 3, separate blocks (lines) with the vertical bar character |." },
+    { Setting_Pendant_3, "Macro content for macro 4, separate blocks (lines) with the vertical bar character |." },
+    { Setting_Pendant_4, "Spindle Macro.  Use to start spindle, or turn it off if running." },
 #if N_MACROS > 5
-    { Setting_UserDefined_5, "Macro content for macro 6, separate blocks (lines) with the vertical bar character |." },
-    { Setting_UserDefined_6, "Macro content for macro 7, separate blocks (lines) with the vertical bar character |." },
+    { Setting_Pendant_5, "Macro content for macro 6, separate blocks (lines) with the vertical bar character |." },
+    { Setting_Pendant_6, "Macro content for macro 7, separate blocks (lines) with the vertical bar character |." },
 #endif    
 };
 #endif
@@ -343,7 +349,8 @@ static void read_count_info (sys_state_t state)
     if (count_packet.uptime > previous_count_packet.uptime)
         watchdog_counter = 0;
 
-    cmd_process = process_count_info(prev_count_ptr, count_ptr);    
+    cmd_process = process_count_info(prev_count_ptr, count_ptr);   
+    //process_count_info(prev_count_ptr, count_ptr); 
 
     if (count_packet.buttons > 0){
         clear_buttons();
@@ -362,7 +369,7 @@ static void onReportOptions (bool newopt)
     on_report_options(newopt);
 
     if(!newopt){
-        hal.stream.write("[PLUGIN:Pendant v1.0]"  ASCII_EOL);
+        hal.stream.write("[PLUGIN:MPG Pendant v1.0]"  ASCII_EOL);
         hal.stream.write("[PLUGIN:Macro plugin v0.02]" ASCII_EOL);
     }
 }
@@ -374,6 +381,23 @@ ISR_CODE static void ISR_FUNC(i2c_process_counts)(char c)
     protocol_enqueue_rt_command(read_count_info);    
 }
 
+static void initialize_count_info (void)
+{    
+    I2C_PendantRead (KEYPAD_I2CADDR, sizeof(Machine_status_packet), sizeof(Pendant_count_packet), count_ptr, i2c_process_counts);
+    sprintf(charbuf, "INIT X %d Y %d Z %d UT %d", count_packet.x_axis, count_packet.y_axis, count_packet.z_axis, count_packet.uptime);
+    report_message(charbuf, Message_Info);
+    previous_count_packet = count_packet;
+    //check the version number, if good signal pendant attached.
+    if(1) {//version check ok
+    
+    pendant_attached = 1;
+    watchdog_counter = 0;
+    }else{
+    //else, report error
+    report_message("Wrong MPG protocol version.", Message_Warning);
+    pendant_attached = 0;
+    }
+}
 
 static void keypad_poll (void)
 {
@@ -387,32 +411,37 @@ static void keypad_poll (void)
         watchdog_ticks = ms;
     }
 
-    if(watchdog_counter > WATCHDOG_DELAY){
+    if(watchdog_counter > WATCHDOG_DELAY && pendant_attached){
         watchdog_counter = 0;
-        plugin_reset();
+        pendant_attached = 0;
+        report_message("Pendant disconnected! Holding.", Message_Warning);
+        grbl.enqueue_realtime_command(CMD_FEED_HOLD);
+        //plugin_reset();
     }
 
-    if(cmd_process){
-        if(ms > last_ms_counts + READ_COUNT_INTERVAL){ //don't spam the port
-            protocol_enqueue_rt_command(count_msg);    
+    if(pendant_attached){
+        if(cmd_process){
+            if(ms > last_ms_counts + READ_COUNT_INTERVAL){ //don't spam the port
+                protocol_enqueue_rt_command(count_msg);    
+                I2C_PendantRead (KEYPAD_I2CADDR, sizeof(Machine_status_packet), sizeof(Pendant_count_packet), count_ptr, i2c_process_counts);
+                last_ms_counts = ms;
+                last_ms = ms;
+                return;
+            }
+        }else if (state_get() == STATE_JOG){ //check more often during manual jogging
+            if(ms < last_ms + SEND_STATUS_JOG_DELAY)
+                return;
+            protocol_enqueue_rt_command(count_msg); 
             I2C_PendantRead (KEYPAD_I2CADDR, sizeof(Machine_status_packet), sizeof(Pendant_count_packet), count_ptr, i2c_process_counts);
-            last_ms_counts = ms;
             last_ms = ms;
-            return;
-        }
-    }else if (state_get() == STATE_JOG){ //check more often during manual jogging
-        if(ms < last_ms + SEND_STATUS_JOG_DELAY)
-            return;
-        protocol_enqueue_rt_command(count_msg); 
-        I2C_PendantRead (KEYPAD_I2CADDR, sizeof(Machine_status_packet), sizeof(Pendant_count_packet), count_ptr, i2c_process_counts);
-        last_ms = ms;
 
-    } else{
-        if(ms < last_ms + SEND_STATUS_DELAY) // check once every update period
-        return;
-        protocol_enqueue_rt_command(count_msg);    
-        I2C_PendantRead (KEYPAD_I2CADDR, sizeof(Machine_status_packet), sizeof(Pendant_count_packet), count_ptr, i2c_process_counts);                
-        last_ms = ms;
+        } else{
+            if(ms < last_ms + SEND_STATUS_DELAY) // check once every update period
+            return;
+            protocol_enqueue_rt_command(count_msg);    
+            I2C_PendantRead (KEYPAD_I2CADDR, sizeof(Machine_status_packet), sizeof(Pendant_count_packet), count_ptr, i2c_process_counts);                
+            last_ms = ms;
+        }
     }
     
 }
@@ -423,28 +452,24 @@ ISR_CODE bool ISR_FUNC(keypad_strobe_handler)(uint_fast8_t id, bool keydown)
     strobe_counter++;
 
     //probably need something with keyreleased
-    if(!keyreleased){
+    if(!keyreleased)
         cmd_process = 1;
-    }
+    else
+        cmd_process = 0;
 
-    keypad_poll();
+    if (pendant_attached)
+        keypad_poll();
+    else
+        initialize_count_info();
 
     return true;
-}
-
-static void initialize_count_info (void)
-{    
-    I2C_PendantRead (KEYPAD_I2CADDR, sizeof(Machine_status_packet), sizeof(Pendant_count_packet), count_ptr, i2c_process_counts);
-    sprintf(charbuf, "INIT X %d Y %d Z %d UT %d", count_packet.x_axis, count_packet.y_axis, count_packet.z_axis, count_packet.uptime);
-    report_message(charbuf, Message_Info);
-    previous_count_packet = count_packet;
 }
 
 static void onStateChanged (sys_state_t state)
 {
     keypad_poll();
-    //if (on_state_change)         // Call previous function in the chain.
-    //    on_state_change(state);    
+    if (on_state_change)         // Call previous function in the chain.
+        on_state_change(state);    
 }
 
 static void keypad_poll_realtime (sys_state_t grbl_state)

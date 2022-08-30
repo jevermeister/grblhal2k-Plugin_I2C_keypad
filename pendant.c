@@ -445,7 +445,7 @@ static void i2c_enqueue_keycode (char c)
 bool process_count_info (uint8_t * prev_count_ptr, uint8_t * count_ptr)
 {    
 
-    bool cmd = 1;
+    bool cmd = 0;
     
     Pendant_count_packet * count_packet = (Pendant_count_packet*) count_ptr;
     Pendant_count_packet * previous_count_packet = (Pendant_count_packet*) prev_count_ptr;
@@ -621,8 +621,7 @@ bool process_count_info (uint8_t * prev_count_ptr, uint8_t * count_ptr)
                 i2c_enqueue_keycode(MACROLOWER);
 
             cmd = 1;                                                                                                                                                                                                                                                                                                                                                                                    
-        }
-            
+        }            
         //if a button is active
 
     return cmd;
