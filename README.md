@@ -2,6 +2,30 @@
 
 **Modified for Interactive two-way control**
 
+Need to add these to settings.h in the core:
+
+    // Reserved for user pendant
+    Setting_Pendant_0 = 480,
+    Setting_Pendant_1 = 481,
+    Setting_Pendant_2 = 482,
+    Setting_Pendant_3 = 483,
+    Setting_Pendant_4 = 484,
+    Setting_Pendant_5 = 485,
+    Setting_Pendant_6 = 486,
+    Setting_Pendant_7 = 487,
+    Setting_Pendant_8 = 488,
+    Setting_Pendant_9 = 489,
+    Setting_Pendant_10 = 490,
+    Setting_Pendant_11 = 491,
+    Setting_Pendant_12 = 492,
+    Setting_Pendant_13 = 493,
+    Setting_Pendant_14 = 494,
+    Setting_Pendant_15 = 495,
+    Setting_Pendant_16 = 496,
+    Setting_Pendant_17 = 497,
+    Setting_Pendant_18 = 498,
+    Setting_Pendant_19 = 499,
+
 This version of the I2C keypad plugin is modified to send status info for display on the I2C jogger.  It also implements some basic macro functionality in response to button presses.
 
 https://github.com/Expatria-Technologies/I2C_Jog_Controller
