@@ -381,11 +381,16 @@ ISR_CODE static void ISR_FUNC(i2c_process_counts)(char c)
     protocol_enqueue_rt_command(read_count_info);    
 }
 
+static void warning_protocol (uint_fast16_t state)
+{
+    report_message("Wrong MPG protocol version.", Message_Warning);
+}
+
 static void initialize_count_info (void)
 {    
     I2C_PendantRead (KEYPAD_I2CADDR, sizeof(Machine_status_packet), sizeof(Pendant_count_packet), count_ptr, i2c_process_counts);
-    sprintf(charbuf, "INIT X %d Y %d Z %d UT %d", count_packet.x_axis, count_packet.y_axis, count_packet.z_axis, count_packet.uptime);
-    report_message(charbuf, Message_Info);
+    //sprintf(charbuf, "INIT X %d Y %d Z %d UT %d", count_packet.x_axis, count_packet.y_axis, count_packet.z_axis, count_packet.uptime);
+    //report_message(charbuf, Message_Info);
     previous_count_packet = count_packet;
     //check the version number, if good signal pendant attached.
     if(1) {//version check ok
@@ -394,9 +399,14 @@ static void initialize_count_info (void)
     watchdog_counter = 0;
     }else{
     //else, report error
-    report_message("Wrong MPG protocol version.", Message_Warning);
+    protocol_enqueue_rt_command(warning_protocol);
     pendant_attached = 0;
     }
+}
+
+static void warning_disconnect (uint_fast16_t state)
+{
+    report_message("Pendant disconnected! Holding.", Message_Warning);
 }
 
 static void keypad_poll (void)
@@ -414,7 +424,7 @@ static void keypad_poll (void)
     if(watchdog_counter > WATCHDOG_DELAY && pendant_attached){
         watchdog_counter = 0;
         pendant_attached = 0;
-        report_message("Pendant disconnected! Holding.", Message_Warning);
+        protocol_enqueue_rt_command(warning_disconnect);
         grbl.enqueue_realtime_command(CMD_FEED_HOLD);
         //plugin_reset();
     }
@@ -489,6 +499,19 @@ static void warning_msg (uint_fast16_t state)
     report_message("Pendant plugin failed to initialize!", Message_Warning);
 }
 
+bool attached_stream_tx_blocking (void)
+{
+    // TODO: Restructure st_prep_buffer() calls to be executed here during a long print.
+
+    grbl.on_execute_realtime(state_get());
+
+    //if(hal.stream.state.connected)
+        return !(sys.rt_exec_state & EXEC_RESET);
+    //else
+        return false;
+
+}
+
 bool keypad_init (void)
 {
     if(hal.irq_claim(IRQ_I2C_Strobe, 0, keypad_strobe_handler) && 
@@ -510,6 +533,8 @@ bool keypad_init (void)
 
         on_execute_delay = grbl.on_execute_delay;
         grbl.on_execute_delay = keypad_poll_delay;
+
+        //hal.stream_blocking_callback = attached_stream_tx_blocking;
 
         settings_register(&keypad_setting_details); 
         settings_register(&macro_setting_details);     

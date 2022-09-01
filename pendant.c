@@ -405,7 +405,7 @@ static void process_keycode (sys_state_t state)
             case CMD_OVERRIDE_SPINDLE_STOP:
                 enqueue_accessory_override(keycode);               
                 break;
-
+            
             case CMD_SAFETY_DOOR:
             case CMD_OPTIONAL_STOP_TOGGLE:
             case CMD_SINGLE_BLOCK_TOGGLE:
