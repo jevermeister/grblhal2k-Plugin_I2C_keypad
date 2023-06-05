@@ -87,6 +87,10 @@ static on_execute_realtime_ptr on_execute_realtime, on_execute_delay;
 static on_jogmode_changed_ptr on_jogmode_changed;
 static on_jogmodify_changed_ptr on_jogmodify_changed;
 
+static on_spindle_select_ptr on_spindle_select;
+spindle_ptrs_t *current_spindle = NULL;
+
+
 keypad_t keypad = {0};
 
 static const setting_detail_t keypad_settings[] = {
@@ -127,7 +131,7 @@ static const setting_descr_t macro_settings_descr[] = {
     { Setting_UserDefined_1, "Macro content for macro 2, separate blocks (lines) with the vertical bar character |." },
     { Setting_UserDefined_2, "Macro content for macro 3, separate blocks (lines) with the vertical bar character |." },
     { Setting_UserDefined_3, "Macro content for macro 4, separate blocks (lines) with the vertical bar character |." },
-    { Setting_UserDefined_4, "Spindle Macro.  Use to start spindle, or turn it off if running." },
+    { Setting_UserDefined_4, "Macro content for macro 5, separate blocks (lines) with the vertical bar character |." },
 #if N_MACROS > 5
     { Setting_UserDefined_5, "Macro content for macro 6, separate blocks (lines) with the vertical bar character |." },
     { Setting_UserDefined_6, "Macro content for macro 7, separate blocks (lines) with the vertical bar character |." },
@@ -376,12 +380,21 @@ static status_code_t disable_lock (sys_state_t state)
     return retval;
 }
 
+static bool onSpindleSelect (spindle_ptrs_t *spindle)
+{   
+    current_spindle = spindle;
+    return on_spindle_select == NULL || on_spindle_select(spindle);
+}
+
 static void send_status_info (void)
 {    
     int32_t current_position[N_AXIS]; // Copy current state of the system position variable
     float jog_modifier = 0;
     float print_position[N_AXIS];
     status_packet.a_coordinate = 0xffff;
+
+    spindle_ptrs_t *spindle;
+    spindle_state_t spindle_state;
 
     static uint32_t last_ms;
     uint32_t ms = hal.get_elapsed_ticks();
@@ -449,15 +462,18 @@ static void send_status_info (void)
     status_packet.spindle_override = sys.override.spindle_rpm;
     status_packet.spindle_stop = sys.override.spindle_stop.value;
 
-    // Report realtime feed speed
-        if(hal.spindle.cap.variable) {
-            status_packet.spindle_rpm = sys.spindle_rpm;
-            if(hal.spindle.get_data)
-                status_packet.spindle_rpm = hal.spindle.get_data(SpindleData_RPM)->rpm;
-        } else
-            status_packet.spindle_rpm = sys.spindle_rpm;
+    spindle = spindle_get(0);
+    spindle_state = spindle->get_state();
 
-    status_packet.spindle_rpm = sys.spindle_rpm;  //rpm should be changed to actual reading
+    if(current_spindle->cap.variable) {
+        status_packet.spindle_rpm = spindle_state.on ? spindle->param->rpm_overridden : 0;
+        if(spindle->get_data)
+            status_packet.spindle_rpm = spindle->get_data(SpindleData_RPM)->rpm;
+    } else
+        status_packet.spindle_rpm = spindle->param->rpm;
+
+    status_packet.feed_rate = st_get_realtime_rate();
+
     status_packet.alarm = (uint8_t) sys.alarm;
     status_packet.home_state = (uint8_t)(sys.homing.mask & sys.homed.mask);
     status_packet.jog_mode = (uint8_t) jogMode << 4 | (uint8_t) jogModify;
@@ -486,7 +502,7 @@ static void send_status_info (void)
     
     status_packet.current_wcs = gc_state.modal.coord_system.id;       
 
-    I2C_Send (KEYPAD_I2CADDR, status_ptr, sizeof(Machine_status_packet), 0); 
+    i2c_send (KEYPAD_I2CADDR, status_ptr, sizeof(Machine_status_packet), 0); 
 
     last_ms = ms;   
 }
@@ -529,15 +545,8 @@ static void keypad_process_keypress (sys_state_t state)
                 //strcat(strcpy(command, "G10 L20 P0 X"), ftoa(1.27, 5));
                 execute_macro(1);             
                 break;
-             case SPINON:                                   //Macro 5 is special
-                spindle_state = hal.spindle.get_state();
-                if(!spindle_state.on){
-                    //strcat(strcpy(command, "S"), ftoa(1500, 0));
-                    //strcat(command, "M03");
-                    execute_macro(4); 
-                } else{
-                    strcpy(command, "M05");
-                }
+             case SPINON:                                   //Macro 5 is not special
+                execute_macro(4); 
                 break;
              case MACROHOME:                                   // change WCS                
                 if (gc_state.modal.coord_system.id  < N_WorkCoordinateSystems-1)
@@ -554,10 +563,10 @@ static void keypad_process_keypress (sys_state_t state)
                 break;
                                                                                                                                         
              case 'M':                                   // Mist override
-                enqueue_accessory_override(CMD_OVERRIDE_COOLANT_MIST_TOGGLE);
+                enqueue_coolant_override(CMD_OVERRIDE_COOLANT_MIST_TOGGLE);
                 break;
             case 'C':                                   // Coolant override
-                enqueue_accessory_override(CMD_OVERRIDE_COOLANT_FLOOD_TOGGLE);
+                enqueue_coolant_override(CMD_OVERRIDE_COOLANT_FLOOD_TOGGLE);
                 break;
 
             case CMD_FEED_HOLD_LEGACY:                  // Feed hold
@@ -611,13 +620,16 @@ static void keypad_process_keypress (sys_state_t state)
             case CMD_OVERRIDE_FAN0_TOGGLE:
             case CMD_OVERRIDE_COOLANT_FLOOD_TOGGLE:
             case CMD_OVERRIDE_COOLANT_MIST_TOGGLE:
+                enqueue_coolant_override(keycode);
+                send_status_info();
+                break;                
             case CMD_OVERRIDE_SPINDLE_RESET:
             case CMD_OVERRIDE_SPINDLE_COARSE_PLUS:
             case CMD_OVERRIDE_SPINDLE_COARSE_MINUS:
             case CMD_OVERRIDE_SPINDLE_FINE_PLUS:
             case CMD_OVERRIDE_SPINDLE_FINE_MINUS:
             case CMD_OVERRIDE_SPINDLE_STOP:
-                enqueue_accessory_override(keycode);
+                enqueue_spindle_override(keycode);
                 send_status_info();                
                 break;
 
@@ -801,7 +813,7 @@ ISR_CODE bool ISR_FUNC(keypad_strobe_handler)(uint_fast8_t id, bool keydown)
     keyreleased = !keydown;
 
     if(keydown){
-        I2C_GetKeycode(KEYPAD_I2CADDR, i2c_enqueue_keycode);
+        i2c_get_keycode(KEYPAD_I2CADDR, i2c_enqueue_keycode);
     }
 
     else if(jogging) {
@@ -819,8 +831,8 @@ ISR_CODE bool ISR_FUNC(keypad_strobe_handler)(uint_fast8_t id, bool keydown)
 static void onStateChanged (sys_state_t state)
 {
     send_status_info();
-    //if (on_state_change)         // Call previous function in the chain.
-    //    on_state_change(state);    
+    if (on_state_change)         // Call previous function in the chain.
+        on_state_change(state);    
 }
 
 static void keypad_poll (void)
@@ -905,6 +917,9 @@ bool keypad_init (void)
 
         on_jogmodify_changed = keypad.on_jogmodify_changed;
         keypad.on_jogmodify_changed = jogmodify_changed;
+
+        //on_spindle_select = grbl.on_spindle_select;
+        //grbl.on_spindle_select = onSpindleSelect;
 
         on_state_change = grbl.on_state_change;             // Subscribe to the state changed event by saving away the original
         grbl.on_state_change = onStateChanged;              // function pointer and adding ours to the chain.   
