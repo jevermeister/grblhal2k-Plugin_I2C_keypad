@@ -457,6 +457,9 @@ static void send_status_info (void)
             status_packet.machine_state = 254;
             break;                                                        
     }
+
+    //check the probe pin, if it is asserted, add it to the state
+
     status_packet.coolant_state = hal.coolant.get_state();
     status_packet.feed_override = sys.override.feed_rate;
     status_packet.spindle_override = sys.override.spindle_rpm;
