@@ -30,6 +30,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "keypad.h"
 
@@ -462,18 +463,19 @@ static void send_status_info (void)
 
     status_packet.coolant_state = hal.coolant.get_state();
     status_packet.feed_override = sys.override.feed_rate;
-    status_packet.spindle_override = sys.override.spindle_rpm;
-    status_packet.spindle_stop = sys.override.spindle_stop.value;
 
     spindle = spindle_get(0);
     spindle_state = spindle->get_state();
 
-    if(current_spindle->cap.variable) {
-        status_packet.spindle_rpm = spindle_state.on ? spindle->param->rpm_overridden : 0;
+    if(spindle->cap.variable) {
+        status_packet.spindle_rpm = spindle_state.on ? lroundf(spindle->param->rpm_overridden) : 0;
         if(spindle->get_data)
             status_packet.spindle_rpm = spindle->get_data(SpindleData_RPM)->rpm;
     } else
         status_packet.spindle_rpm = spindle->param->rpm;
+
+    status_packet.spindle_override = (uint32_t)spindle->param->override_pct;
+    status_packet.spindle_stop = spindle_state.on;        
 
     status_packet.feed_rate = st_get_realtime_rate();
 
