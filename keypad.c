@@ -465,7 +465,9 @@ static void send_status_info (void)
     status_packet.feed_override = sys.override.feed_rate;
 
     spindle = spindle_get(0);
-    spindle_state = spindle->get_state(spindle);
+
+    if(spindle->get_state)
+        spindle_state = spindle->get_state(spindle);
 
     if(spindle->cap.variable) {
         status_packet.spindle_rpm = spindle_state.on ? lroundf(spindle->param->rpm_overridden) : 0;
