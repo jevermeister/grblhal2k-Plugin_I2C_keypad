@@ -64,7 +64,7 @@
 #define MACROHOME  0x8E
 #define RESET  0x7F
 #define UNLOCK 0x80
-#define SPINON 0x81
+#define SPINON 0x83
 
 typedef enum {
     JogMode_Fast = 0,

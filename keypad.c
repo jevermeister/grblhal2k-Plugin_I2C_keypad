@@ -49,6 +49,7 @@
 #include "grbl/nvs_buffer.h"
 #include "grbl/state_machine.h"
 #include "grbl/machine_limits.h"
+#include "grbl/motion_control.h"
 #endif
 
 typedef struct {
@@ -274,13 +275,14 @@ static void macro_settings_restore (void)
             };
             macro_plugin_settings.macro[idx].data[idy] = '\0';
     };
-
-    char cmd_str[] = "S200M03";
+    
+    //removed the special spindle macro.
+    /*char cmd_str[] = "S200M03";
 
     for(idx = 0; idx < strlen(cmd_str); idx++) {
         macro_plugin_settings.macro[4].data[idx] = cmd_str[idx];
     };
-    macro_plugin_settings.macro[4].data[idx] = '\0'; 
+    macro_plugin_settings.macro[4].data[idx] = '\0'; */
 
     hal.nvs.memcpy_to_nvs(macro_nvs_address, (uint8_t *)&macro_plugin_settings, sizeof(macro_settings_t), true);
 
@@ -352,31 +354,13 @@ static void jog_command (char *cmd, char *to)
     strcat(strcpy(cmd, "$J=G91G21"), to);
 }
 
-static status_code_t disable_lock (sys_state_t state)
+static status_code_t disable_lock (void)
 {
     status_code_t retval = Status_OK;
 
-    if(state & (STATE_ALARM|STATE_ESTOP)) {
-
-        control_signals_t control_signals = hal.control.get_state();
-
-        // Block if self-test failed
-        if(sys.alarm == Alarm_SelftestFailed)
-            retval = Status_SelfTestFailed;
-        // Block if e-stop is active.
-        else if (control_signals.e_stop)
-            retval = Status_EStop;
-        // Block if safety door is ajar.
-        else if (control_signals.safety_door_ajar)
-            retval = Status_CheckDoor;
-        // Block if safety reset is active.
-        else if(control_signals.reset)
-            retval = Status_Reset;
-        else {
-            grbl.report.feedback_message(Message_AlarmUnlock);
-            state_set(STATE_IDLE);
-        }
-    } // Otherwise, no effect.
+    //grbl.enqueue_realtime_command(CMD_RESET);   
+    //hal.stream.write("[MSG:EXECUTE UNLOCK]"  ASCII_EOL);
+    grbl.enqueue_realtime_command(CMD_STOP);
 
     return retval;
 }
@@ -522,8 +506,8 @@ static void keypad_process_keypress (sys_state_t state)
 
     spindle_state_t spindle_state;
 
-    if(state == STATE_ESTOP)
-        return;
+    //if(state == STATE_ESTOP)
+    //    return;
 
     if(keycode) {
 
@@ -563,10 +547,10 @@ static void keypad_process_keypress (sys_state_t state)
                 break;                
                 break;
              case UNLOCK:  
-                disable_lock(state_get());
+                //grbl.enqueue_realtime_command(CMD_STOP);
                 break;
              case RESET:                                   // Soft reset controller
-                grbl.enqueue_realtime_command(CMD_RESET);
+                //grbl.enqueue_realtime_command(CMD_RESET);
                 break;
                                                                                                                                         
              case 'M':                                   // Mist override
@@ -576,11 +560,11 @@ static void keypad_process_keypress (sys_state_t state)
                 enqueue_coolant_override(CMD_OVERRIDE_COOLANT_FLOOD_TOGGLE);
                 break;
 
-            case CMD_FEED_HOLD_LEGACY:                  // Feed hold
+            case CMD_FEED_HOLD:                  // Feed hold
                 grbl.enqueue_realtime_command(CMD_FEED_HOLD);
                 break;
 
-            case CMD_CYCLE_START_LEGACY:                // Cycle start
+            case CMD_CYCLE_START:                // Cycle start
                 grbl.enqueue_realtime_command(CMD_CYCLE_START);
                 break;
 
@@ -806,6 +790,16 @@ ISR_CODE static void ISR_FUNC(i2c_enqueue_keycode)(char c)
 {
     uint32_t bptr = (keybuf.head + 1) & (KEYBUF_SIZE - 1);    // Get next head pointer
 
+    //if the keycode is an unlock or reset command, execute them  immediately as the command queue is not processed while in estop.
+    switch (c){
+        case UNLOCK:
+            grbl.enqueue_realtime_command(CMD_STOP);
+        break;   
+        case RESET:
+            grbl.enqueue_realtime_command(CMD_RESET);
+        break;                
+    }    
+       
     if(bptr != keybuf.tail) {           // If not buffer full
         keybuf.buf[keybuf.head] = c;    // add data to buffer
         keybuf.head = bptr;             // and update pointer
