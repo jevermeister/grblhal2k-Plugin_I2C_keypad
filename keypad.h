@@ -66,6 +66,19 @@
 #define UNLOCK 0x80
 #define SPINON 0x83
 
+#define NORMAL_MODE         0
+#define LASER_MODE          1
+#define LATHE_MODE          2
+
+typedef union {
+    uint8_t value;                 //!< Bitmask value
+    struct {
+        uint8_t state        :4, //Machine state machine status
+                mode         :3, //machine mode
+                disconnected :1; //Connection status 
+    };
+} machine_state_t;
+
 typedef enum {
     JogMode_Fast = 0,
     JogMode_Slow,
@@ -80,7 +93,7 @@ typedef enum {
 
 typedef struct Machine_status_packet {
 uint8_t address;
-uint8_t machine_state;
+machine_state_t machine_state;
 uint8_t alarm;
 uint8_t home_state;
 uint8_t feed_override;

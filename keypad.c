@@ -415,33 +415,36 @@ static void send_status_info (void)
     
     switch (state_get()){
         case STATE_ALARM:
-            status_packet.machine_state = 1;
+            status_packet.machine_state.state = 1;
             break;
         case STATE_ESTOP:
-            status_packet.machine_state = 1;
+            status_packet.machine_state.state = 1;
             break;            
         case STATE_CYCLE:
-            status_packet.machine_state = 2;
+            status_packet.machine_state.state = 2;
             break;
         case STATE_HOLD:
-            status_packet.machine_state = 3;
+            status_packet.machine_state.state = 3;
             break;
         case STATE_TOOL_CHANGE:
-            status_packet.machine_state = 4;
+            status_packet.machine_state.state = 4;
             break;
         case STATE_IDLE:
-            status_packet.machine_state = 5;
+            status_packet.machine_state.state = 5;
             break;
         case STATE_HOMING:
-            status_packet.machine_state = 6;
+            status_packet.machine_state.state = 6;
             break;   
         case STATE_JOG:
-            status_packet.machine_state = 7;
+            status_packet.machine_state.state = 7;
             break;                                    
         default :
-            status_packet.machine_state = 254;
+            status_packet.machine_state.state = 0x0F;
             break;                                                        
     }
+
+    status_packet.machine_state.mode = settings.mode;
+    status_packet.machine_state.disconnected = 0;
 
     //check the probe pin, if it is asserted, add it to the state
 
@@ -751,7 +754,7 @@ static void onReportOptions (bool newopt)
     on_report_options(newopt);
 
     if(!newopt){
-        hal.stream.write("[PLUGIN:KEYPAD v1.3 INTERTEST]"  ASCII_EOL);
+        hal.stream.write("[PLUGIN:KEYPAD v1.4 Jog2K]"  ASCII_EOL);
         hal.stream.write("[PLUGIN:Macro plugin v0.02]" ASCII_EOL);
     }
 }
