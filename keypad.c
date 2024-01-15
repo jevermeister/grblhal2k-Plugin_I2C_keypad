@@ -206,6 +206,20 @@ static void run_macro (uint_fast16_t state)
     }
 }
 
+// enqueue homing command by switching input stream.
+static void run_homing (uint_fast16_t state)
+{
+    if(!is_executing && ( (state_get() == STATE_IDLE) || (state_get() == STATE_ALARM) ) ) {
+        is_executing = true;
+        command = "$H";
+        if (hal.stream.read != get_macro_char){
+            stream_read = hal.stream.read;
+            hal.stream.read = get_macro_char;
+            grbl.report.status_message = trap_status_report;
+        }
+    }
+}
+
 // On falling interrupt run macro if machine is in Idle state.
 // Since this function runs in an interrupt context actual start of execution
 // is registered as a single run task to be started from the foreground process.
@@ -594,7 +608,7 @@ static void keypad_process_keypress (sys_state_t state)
                     keypad.on_jogmodify_changed(jogModify);
                 break;
             case 'H':                                   // Home axes
-                strcpy(command, "$H");
+                //strcpy(command, "$H");
                 break;
 
          // Pass most of the top bit set commands trough unmodified
@@ -800,7 +814,10 @@ ISR_CODE static void ISR_FUNC(i2c_enqueue_keycode)(char c)
         break;   
         case RESET:
             grbl.enqueue_realtime_command(CMD_RESET);
-        break;                
+        break;
+        case 'H':
+            protocol_enqueue_rt_command(run_homing);
+        break;                          
     }    
        
     if(bptr != keybuf.tail) {           // If not buffer full
