@@ -63,8 +63,10 @@ static char buf[(STRLEN_COORDVALUE + 1) * N_AXIS];
 static on_state_change_ptr on_state_change;
 //static on_execute_realtime_ptr on_execute_realtime; // For real time loop insertion
 
+#define WATCHDOG_DELAY 2000
 #define SEND_STATUS_DELAY 300
 #define SEND_STATUS_JOG_DELAY 100
+#define READ_COUNT_INTERVAL 60
 
 static bool is_executing = false;
 static char *command;
@@ -74,16 +76,30 @@ static macro_settings_t macro_plugin_settings;
 static stream_read_ptr stream_read;
 static driver_reset_ptr driver_reset;
 
+static int16_t watchdog_counter;
+
 static int16_t get_macro_char (void);
 
-static Machine_status_packet status_packet;
+static machine_status_packet_t status_packet;
+static pendant_count_packet_t count_packet, previous_count_packet;
 
+//can use the pointers to avoid copying data?  Ping pong buffer.
+static uint8_t *count_ptr = (uint8_t*) &count_packet;
+static uint8_t *prev_count_ptr = (uint8_t*) &previous_count_packet;
 static uint8_t *status_ptr = (uint8_t*) &status_packet;
+
+
+
 static bool jogging = false, keyreleased = true;
 static jogmode_t jogMode = JogMode_Fast;
 static jogmodify_t jogModify = JogModify_1;
 static jog_settings_t jog;
 static keybuffer_t keybuf = {0};
+
+static bool cmd_process = false, keyreleased = true;
+int32_t strobe_counter = 0;
+static bool pendant_attached = false;
+
 static on_report_options_ptr on_report_options;
 static on_execute_realtime_ptr on_execute_realtime, on_execute_delay;
 static on_jogmode_changed_ptr on_jogmode_changed;
@@ -92,8 +108,8 @@ static on_jogmodify_changed_ptr on_jogmodify_changed;
 static on_spindle_select_ptr on_spindle_select;
 spindle_ptrs_t *current_spindle = NULL;
 
-
 keypad_t keypad = {0};
+jog_settings_t jog;
 
 static const setting_detail_t keypad_settings[] = {
     { Setting_JogStepSpeed, Group_Jogging, "Step jog speed", "mm/min", Format_Decimal, "###0.0", NULL, NULL, Setting_NonCore, &jog.step_speed, NULL, NULL },
@@ -385,12 +401,20 @@ static bool onSpindleSelect (spindle_ptrs_t *spindle)
     return on_spindle_select == NULL || on_spindle_select(spindle);
 }
 
+static void count_msg (uint_fast16_t state)
+{
+    #if 0
+    sprintf(charbuf, "X %d Y %d Z %d WD %d KR %d JG %d SC %d", count_packet.x_axis, count_packet.y_axis, count_packet.z_axis, watchdog_counter, keyreleased, cmd_process, strobe_counter);
+    report_message(charbuf, Message_Info);
+    #endif
+}
+
 static void send_status_info (void)
 {    
     int32_t current_position[N_AXIS]; // Copy current state of the system position variable
     float jog_modifier = 0;
     float print_position[N_AXIS];
-    status_packet.a_coordinate = 0xffff;
+    status_packet.coordinate.a = 0xffff;
 
     spindle_ptrs_t *spindle;
     spindle_state_t spindle_state;
@@ -482,14 +506,14 @@ static void send_status_info (void)
 
     status_packet.feed_rate = st_get_realtime_rate();
 
-    status_packet.alarm = (uint8_t) sys.alarm;
-    status_packet.home_state = (uint8_t)(sys.homing.mask & sys.homed.mask);
-    status_packet.jog_mode = (uint8_t) jogMode << 4 | (uint8_t) jogModify;
-    status_packet.x_coordinate = print_position[0];
-    status_packet.y_coordinate = print_position[1];
-    status_packet.z_coordinate = print_position[2];
+    status_packet.status_code = (uint8_t) sys.alarm;
+    status_packet.home_state.value = (uint8_t)(sys.homing.mask & sys.homed.mask);
+    status_packet.jog_mode.value = (uint8_t) jogMode << 4 | (uint8_t) jogModify;
+    status_packet.coordinate.x = print_position[0];
+    status_packet.coordinate.y = print_position[1];
+    status_packet.coordinate.z = print_position[2];
     #if N_AXIS > 3
-    status_packet.a_coordinate = print_position[3];
+    status_packet.coordinate.a = print_position[3];
     #else
     status_packet.a_coordinate = 0xFFFFFFFF;
     #endif
@@ -510,7 +534,7 @@ static void send_status_info (void)
     
     status_packet.current_wcs = gc_state.modal.coord_system.id;       
 
-    i2c_send (KEYPAD_I2CADDR, status_ptr, sizeof(Machine_status_packet), 0); 
+    i2c_send (KEYPAD_I2CADDR, status_ptr, sizeof(machine_status_packet_t), 0); 
 
     last_ms = ms;   
 }
@@ -763,12 +787,29 @@ static void keypad_process_keypress (sys_state_t state)
     }
 }
 
+static void read_count_info (sys_state_t state)
+{   
+    //for now just assume all is well if uptime is increasing.    
+    if (count_packet.uptime > previous_count_packet.uptime)
+        watchdog_counter = 0;
+
+    cmd_process = process_count_info(prev_count_ptr, count_ptr);   
+    //process_count_info(prev_count_ptr, count_ptr); 
+
+    if (count_packet.buttons > 0){
+        clear_buttons();
+        hal.delay_ms(10, NULL);
+    }
+    send_status_info();
+    previous_count_packet = count_packet;
+}
+
 static void onReportOptions (bool newopt)
 {
     on_report_options(newopt);
 
     if(!newopt){
-        hal.stream.write("[PLUGIN:KEYPAD v1.4 Jog2K]"  ASCII_EOL);
+        hal.stream.write("[PLUGIN:KEYPAD v1.5 Jog2K, Jog3K]"  ASCII_EOL);
         hal.stream.write("[PLUGIN:Macro plugin v0.02]" ASCII_EOL);
     }
 }
@@ -802,6 +843,34 @@ ISR_CODE bool ISR_FUNC(keypad_enqueue_keycode)(char c)
 }
 
 #if KEYPAD_ENABLE == 1
+
+ISR_CODE static void ISR_FUNC(i2c_process_counts)(char c)
+{   
+    protocol_enqueue_rt_command(read_count_info);    
+}
+
+static void warning_protocol (uint_fast16_t state)
+{
+    report_message("Wrong MPG protocol version.", Message_Warning);
+}
+
+static void initialize_count_info (void)
+{    
+    I2C_PendantRead (KEYPAD_I2CADDR, sizeof(machine_status_packet_t), sizeof(pendant_count_packet_t), count_ptr, i2c_process_counts);
+    //sprintf(charbuf, "INIT X %d Y %d Z %d UT %d", count_packet.x_axis, count_packet.y_axis, count_packet.z_axis, count_packet.uptime);
+    //report_message(charbuf, Message_Info);
+    previous_count_packet = count_packet;
+    //check the version number, if good signal pendant attached.
+    if(1) {//version check ok
+    
+    pendant_attached = 1;
+    watchdog_counter = 0;
+    }else{
+    //else, report error
+    protocol_enqueue_rt_command(warning_protocol);
+    pendant_attached = 0;
+    }
+}
 
 ISR_CODE static void ISR_FUNC(i2c_enqueue_keycode)(char c)
 {
@@ -856,27 +925,56 @@ static void onStateChanged (sys_state_t state)
         on_state_change(state);    
 }
 
+static void warning_disconnect (uint_fast16_t state)
+{
+    report_message("Pendant disconnected! Holding.", Message_Warning);
+}
+
 static void keypad_poll (void)
 {
     static uint32_t last_ms;
-
+    static uint32_t watchdog_ticks;
+    static uint32_t last_ms_counts;
     uint32_t ms = hal.get_elapsed_ticks();
 
-    //check more often during manual jogging
-    if (state_get() == STATE_JOG){
-        if(ms < last_ms + SEND_STATUS_JOG_DELAY)
-            return;
-        
-        send_status_info();
-        last_ms = ms;
-
-    } else{
-        if(ms < last_ms + SEND_STATUS_DELAY) // check once every update period
-        return;
-        
-        send_status_info();
-        last_ms = ms;
+    if(ms > watchdog_ticks + 1){
+        watchdog_counter++;
+        watchdog_ticks = ms;
     }
+
+    if(watchdog_counter > WATCHDOG_DELAY && pendant_attached){
+        watchdog_counter = 0;
+        pendant_attached = 0;
+        protocol_enqueue_rt_command(warning_disconnect);
+        grbl.enqueue_realtime_command(CMD_FEED_HOLD);
+        //plugin_reset();
+    }
+
+    if(pendant_attached){
+        if(cmd_process){
+            if(ms > last_ms_counts + READ_COUNT_INTERVAL){ //don't spam the port
+                protocol_enqueue_rt_command(count_msg);    
+                I2C_PendantRead (KEYPAD_I2CADDR, sizeof(machine_status_packet_t), sizeof(pendant_count_packet_t), count_ptr, i2c_process_counts);
+                last_ms_counts = ms;
+                last_ms = ms;
+                return;
+            }
+        }else if (state_get() == STATE_JOG){ //check more often during manual jogging
+            if(ms < last_ms + SEND_STATUS_JOG_DELAY)
+                return;
+            protocol_enqueue_rt_command(count_msg); 
+            I2C_PendantRead (KEYPAD_I2CADDR, sizeof(machine_status_packet_t), sizeof(pendant_count_packet_t), count_ptr, i2c_process_counts);
+            last_ms = ms;
+
+        } else{
+            if(ms < last_ms + SEND_STATUS_DELAY) // check once every update period
+            return;
+            protocol_enqueue_rt_command(count_msg);    
+            I2C_PendantRead (KEYPAD_I2CADDR, sizeof(machine_status_packet_t), sizeof(pendant_count_packet_t), count_ptr, i2c_process_counts);                
+            last_ms = ms;
+        }
+    }
+    
 }
 
 static void keypad_poll_realtime (sys_state_t grbl_state)

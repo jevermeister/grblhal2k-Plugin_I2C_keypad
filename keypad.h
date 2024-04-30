@@ -91,25 +91,67 @@ typedef enum {
     JogModify_001
 } jogmodify_t;
 
-typedef struct Machine_status_packet {
-uint8_t address;
-machine_state_t machine_state;
-uint8_t alarm;
-uint8_t home_state;
-uint8_t feed_override;
-uint8_t spindle_override;
-uint8_t spindle_stop;
-int spindle_rpm;
-float feed_rate;
-coolant_state_t coolant_state;
-uint8_t jog_mode;  //includes both modifier as well as mode
-float jog_stepsize;
-coord_system_id_t current_wcs;  //active WCS or MCS modal state
-float x_coordinate;
-float y_coordinate;
-float z_coordinate;
-float a_coordinate;
-} Machine_status_packet;
+typedef union {
+    uint8_t value;
+    struct {
+        uint8_t modifier :4,
+                mode     :4;
+    };
+} jog_mode_t;
+
+typedef union {
+    uint8_t value;
+    struct {
+        uint8_t diameter       :1,
+                mpg            :1,
+                homed          :1,
+                tlo_referenced :1,
+                mode           :3; // from machine_mode_t setting
+    };
+} machine_modes_t;
+
+typedef union {
+    float values[4];
+    struct {
+        float x;
+        float y;
+        float z;
+        float a;
+    };
+} machine_coords_t;
+
+enum msg_type_t {
+    MachineMsg_None = 0,
+// 1-127 reserved for message string length
+    MachineMsg_Comment = 252,
+    MachineMsg_Overrides = 253,
+    MachineMsg_WorkOffset = 254,
+    MachineMsg_ClearMessage = 255,
+};
+
+typedef struct __attribute__((packed)) {
+    uint16_t address;
+    machine_state_t machine_state;
+    uint8_t machine_substate;
+    axes_signals_t home_state;
+    uint16_t feed_override; // size changed in latest version!
+    uint16_t spindle_override;
+    uint8_t spindle_stop;
+    spindle_state_t spindle_state;
+    int spindle_rpm;
+    float feed_rate;
+    coolant_state_t coolant_state;
+    jog_mode_t jog_mode;
+    control_signals_t signals;
+    float jog_stepsize;
+    coord_system_id_t current_wcs;  //active WCS or MCS modal state
+    axes_signals_t limits;
+    status_code_t status_code;
+    machine_modes_t machine_modes;
+    machine_coords_t coordinate;
+    msg_type_t msgtype; //<! 1 - 127 -> msg[] contains a string msgtype long
+    uint8_t msg[128];
+} machine_status_packet_t;
 
 typedef void (*keycode_callback_ptr)(const char c);
 typedef bool (*on_keypress_preview_ptr)(const char c, uint_fast16_t state);
@@ -132,6 +174,21 @@ typedef struct {
 } macro_settings_t;
 
 extern keypad_t keypad;
+
+typedef struct {
+int32_t uptime;
+jog_mode_t jog_mode;
+int32_t feed_over;
+int32_t spindle_over;
+int32_t rapid_over;
+uint32_t buttons;
+float feedrate; 
+float spindle_rpm; 
+float x_axis;
+float y_axis;
+float z_axis;
+float a_axis;
+} pendant_count_packet_t;
 
 
 bool keypad_init (void);
