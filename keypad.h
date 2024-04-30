@@ -30,11 +30,15 @@
 #include "grbl/settings.h"
 #endif
 
+#include "pendant.h"
+
 #if N_AXIS > 3
 #define N_MACROS 5
 #else
 #define N_MACROS 7
 #endif
+
+#define READ_COUNT_INTERVAL 100
 
 #define KEYBUF_SIZE 8 // must be a power of 2
 #define KEYPAD_I2CADDR 0x49
@@ -120,16 +124,16 @@ typedef union {
     };
 } machine_coords_t;
 
-enum msg_type_t {
+typedef enum {
     MachineMsg_None = 0,
 // 1-127 reserved for message string length
     MachineMsg_Comment = 252,
     MachineMsg_Overrides = 253,
     MachineMsg_WorkOffset = 254,
     MachineMsg_ClearMessage = 255,
-};
+} msg_type_t;
 
-typedef struct __attribute__((packed)) {
+typedef struct {
     uint16_t address;
     machine_state_t machine_state;
     uint8_t machine_substate;
@@ -154,6 +158,7 @@ typedef struct __attribute__((packed)) {
 } machine_status_packet_t;
 
 typedef void (*keycode_callback_ptr)(const char c);
+typedef void (*count_callback_ptr)(void);
 typedef bool (*on_keypress_preview_ptr)(const char c, uint_fast16_t state);
 typedef void (*on_jogmode_changed_ptr)(jogmode_t jogmode);
 typedef void (*on_jogmodify_changed_ptr)(jogmodify_t jogmodify);

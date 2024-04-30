@@ -47,11 +47,14 @@
 #include "grbl/protocol.h"
 #include "grbl/nvs_buffer.h"
 #include "grbl/state_machine.h"
-#include "grbl/limits.h"
+//#include "grbl/limits.h"
 #endif
 
 static jogmode_t jogMode = JogMode_Fast;
 static jogmodify_t jogModify = JogModify_1;
+
+static on_spindle_select_ptr on_spindle_select;
+spindle_ptrs_t *current_spindle = NULL;
 
 char charbuf[127];
 
@@ -64,33 +67,6 @@ typedef struct {
 static keybuffer_t keybuf = {0};
 
 static char buf[(STRLEN_COORDVALUE + 1) * N_AXIS];
-
-#define HALT_PRESSED            (1 << (0) )
-#define HOLD_PRESSED            (1 << (1) )
-#define CYCLE_START_PRESSED     (1 << (2) )
-#define SPINDLE_PRESSED         (1 << (3) )
-#define MIST_PRESSED            (1 << (4) )
-#define FLOOD_PRESSED           (1 << (5) )
-#define HOME_PRESSED            (1 << (6) )
-#define SPINDLE_OVER_DOWN_PRESSED (1 << (7) )
-#define SPINDLE_OVER_RESET_PRESSED  (1 << (8) )
-#define SPINDLE_OVER_UP_PRESSED (1 << (9) )
-#define FEED_OVER_DOWN_PRESSED  (1 << (10) )
-#define FEED_OVER_RESET_PRESSED (1 << (11) )
-#define FEED_OVER_UP_PRESSED    (1 << (12) )
-#define ALT_HALT_PRESSED        (1 << (13) )
-#define ALT_HOLD_PRESSED        (1 << (14) )
-#define ALT_HOME_PRESSED        (1 << (15) )
-#define ALT_CYCLE_START_PRESSED (1 << (16) )
-#define ALT_SPINDLE_PRESSED     (1 << (17) )
-#define ALT_FLOOD_PRESSED       (1 << (18) )
-#define ALT_MIST_PRESSED        (1 << (19) )
-#define ALT_UP_PRESSED          (1 << (20) )
-#define ALT_DOWN_PRESSED        (1 << (21) )
-#define ALT_LEFT_PRESSED        (1 << (22) )
-#define ALT_RIGHT_PRESSED       (1 << (23) )
-#define ALT_RAISE_PRESSED       (1 << (24) )
-#define ALT_LOWER_PRESSED       (1 << (25) )
 
 // Add info about our settings for $help and enumerations.
 // Potentially used by senders for settings UI.
@@ -158,24 +134,27 @@ static status_code_t disable_lock (sys_state_t state)
     return retval;
 }
 
+static bool onSpindleSelect (spindle_ptrs_t *spindle)
+{   
+    current_spindle = spindle;
+    return on_spindle_select == NULL || on_spindle_select(spindle);
+}
+
 void prepare_status_info (uint8_t * status_ptr)
 {    
     
-    Machine_status_packet * status_packet = (Machine_status_packet*) status_ptr;
+    machine_status_packet_t * status_packet = (machine_status_packet_t*) status_ptr;
     
     status_packet->current_wcs = gc_state.modal.coord_system.id; 
 
     int32_t current_position[N_AXIS]; // Copy current state of the system position variable
     float jog_modifier = 0;
     float print_position[N_AXIS];
-    status_packet->a_coordinate = 0xffff;
+    status_packet->coordinate.a = 0xffff;
 
-    static uint32_t last_ms;
-    uint32_t ms = hal.get_elapsed_ticks();
-
-    if(ms < last_ms + 10) // don't spam the port
-    return;
-    
+    spindle_ptrs_t *spindle;
+    spindle_state_t spindle_state;
+   
     memcpy(current_position, sys.position, sizeof(sys.position));
 
     system_convert_array_steps_to_mpos(print_position, current_position);
@@ -204,57 +183,63 @@ void prepare_status_info (uint8_t * status_ptr)
     
     switch (state_get()){
         case STATE_ALARM:
-            status_packet->machine_state = 1;
+            status_packet->machine_state.value = 1;
             break;
         case STATE_ESTOP:
-            status_packet->machine_state = 1;
+            status_packet->machine_state.value = 1;
             break;            
         case STATE_CYCLE:
-            status_packet->machine_state = 2;
+            status_packet->machine_state.value = 2;
             break;
         case STATE_HOLD:
-            status_packet->machine_state = 3;
+            status_packet->machine_state.value = 3;
             break;
         case STATE_TOOL_CHANGE:
-            status_packet->machine_state = 4;
+            status_packet->machine_state.value = 4;
             break;
         case STATE_IDLE:
-            status_packet->machine_state = 5;
+            status_packet->machine_state.value = 5;
             break;
         case STATE_HOMING:
-            status_packet->machine_state = 6;
+            status_packet->machine_state.value = 6;
             break;   
         case STATE_JOG:
-            status_packet->machine_state = 7;
+            status_packet->machine_state.value = 7;
             break;                                    
         default :
-            status_packet->machine_state = 254;
+            status_packet->machine_state.value = 254;
             break;                                                        
     }
+    status_packet->machine_state.mode = settings.mode;
+    status_packet->machine_state.disconnected = 0;
+
+    //check the probe pin, if it is asserted, add it to the state
+
     status_packet->coolant_state = hal.coolant.get_state();
     status_packet->feed_override = sys.override.feed_rate;
-    status_packet->spindle_override = sys.override.spindle_rpm;
-    status_packet->spindle_stop = sys.override.spindle_stop.value;
 
-    // Report realtime feed speed
-        if(hal.spindle.cap.variable) {
-            status_packet->spindle_rpm = sys.spindle_rpm;
-            if(hal.spindle.get_data)
-                status_packet->spindle_rpm = hal.spindle.get_data(SpindleData_RPM)->rpm;
-        } else
-            status_packet->spindle_rpm = sys.spindle_rpm;
+    spindle = spindle_get(0);
 
-    status_packet->spindle_rpm = sys.spindle_rpm;  //rpm should be changed to actual reading
-    status_packet->alarm = (uint8_t) sys.alarm;
-    status_packet->home_state = (uint8_t)(sys.homing.mask & sys.homed.mask);
-    status_packet->jog_mode = (uint8_t) jogMode << 4 | (uint8_t) jogModify;
-    status_packet->x_coordinate = print_position[0];
-    status_packet->y_coordinate = print_position[1];
-    status_packet->z_coordinate = print_position[2];
+    if(spindle->get_state)
+        spindle_state = spindle->get_state(spindle);
+
+    if(spindle->cap.variable) {
+        status_packet->spindle_rpm = spindle_state.on ? lroundf(spindle->param->rpm_overridden) : 0;
+        if(spindle->get_data)
+            status_packet->spindle_rpm = spindle->get_data(SpindleData_RPM)->rpm;
+    } else
+        status_packet->spindle_rpm = spindle->param->rpm;
+
+    status_packet->status_code = (uint8_t) sys.alarm;
+    status_packet->home_state.value = (uint8_t)(sys.homing.mask & sys.homed.mask);
+    status_packet->jog_mode.value = (uint8_t) jogMode << 4 | (uint8_t) jogModify;
+    status_packet->coordinate.x = print_position[0];
+    status_packet->coordinate.y = print_position[1];
+    status_packet->coordinate.z = print_position[2];
     #if N_AXIS > 3
-    status_packet->a_coordinate = print_position[3];
+    status_packet->coordinate.a = print_position[3];
     #else
-    status_packet->a_coordinate = 0xFFFFFFFF;
+    status_packet->coordinate.a = 0xFFFFFFFF;
     #endif
 
     status_packet->feed_rate = st_get_realtime_rate();
@@ -271,175 +256,7 @@ void prepare_status_info (uint8_t * status_ptr)
         break;
     }
     
-    status_packet->current_wcs = gc_state.modal.coord_system.id;    
-
-    I2C_PendantWrite (KEYPAD_I2CADDR, status_ptr, sizeof(Machine_status_packet)); 
-
-    last_ms = ms;   
-}
-
-// Returns 0 if no keycode enqueued
-static char keypad_get_keycode (void)
-{
-    uint32_t data = 0, bptr = keybuf.tail;
-
-    if(bptr != keybuf.head) {
-        data = keybuf.buf[bptr++];               // Get next character, increment tmp pointer
-        keybuf.tail = bptr & (KEYBUF_SIZE - 1);  // and update pointer
-    }
-
-    return data;
-}
-
-static void process_keycode (sys_state_t state)
-{
-    char command[35] = "", keycode = keypad_get_keycode();
-
-    spindle_state_t spindle_state;
-
-    if(state == STATE_ESTOP)
-        return;
-
-    if(keycode) {
-
-        if(keypad.on_keypress_preview && keypad.on_keypress_preview(keycode, state))
-            return;
-
-        switch(keycode) {
-
-            case '?':                                    // pendant attach
-                grbl.enqueue_realtime_command(CMD_STATUS_REPORT);
-                break;
-             case MACROUP:                                   //Macro 1 up
-                //strcat(strcpy(command, "G10 L20 P0 Y"), ftoa(1.27, 5)); 
-                execute_macro(0);            
-                break;
-             case MACRODOWN:                                   //Macro 3 down
-                //strcat(strcpy(command, "G10 L20 P0 Y"), ftoa(-1.27, 5));
-                execute_macro(2);              
-                break;
-             case MACROLEFT:                                   //Macro 2 right
-                //strcat(strcpy(command, "G10 L20 P0 X"), ftoa(-1.27, 5));
-                execute_macro(1); 
-                break;
-             case MACRORIGHT:                                   //Macro 4 left
-                //strcat(strcpy(command, "G10 L20 P0 X"), ftoa(1.27, 5));
-                execute_macro(3);             
-                break;
-             case SPINON:                                   //Macro 5 is special
-                spindle_state = hal.spindle.get_state();
-                if(!spindle_state.on){
-                    //strcat(strcpy(command, "S"), ftoa(1500, 0));
-                    //strcat(command, "M03");
-                    execute_macro(4); 
-                } else{
-                    strcpy(command, "M05");
-                }
-                break;
-             case MACROHOME:                                   // change WCS                
-                if (gc_state.modal.coord_system.id  < N_WorkCoordinateSystems-1)
-                    strcat(strcpy(command, "G"), map_coord_system(gc_state.modal.coord_system.id+1));    
-                else
-                    strcat(strcpy(command, "G"), map_coord_system(0x00));
-                break;                
-                break;
-             case UNLOCK:  
-                disable_lock(state_get());
-                break;
-             case RESET:                                   // Soft reset controller
-                grbl.enqueue_realtime_command(CMD_RESET);
-                break;
-                                                                                                                                        
-             case 'M':                                   // Mist override
-                enqueue_accessory_override(CMD_OVERRIDE_COOLANT_MIST_TOGGLE);
-                break;
-            case 'C':                                   // Coolant override
-                enqueue_accessory_override(CMD_OVERRIDE_COOLANT_FLOOD_TOGGLE);
-                break;
-
-            case CMD_FEED_HOLD_LEGACY:                  // Feed hold
-                grbl.enqueue_realtime_command(CMD_FEED_HOLD);
-                break;
-
-            case CMD_CYCLE_START_LEGACY:                // Cycle start
-                grbl.enqueue_realtime_command(CMD_CYCLE_START);
-                break;
-
-            case CMD_MPG_MODE_TOGGLE:                   // Toggle MPG mode
-                if(hal.driver_cap.mpg_mode)
-                    stream_mpg_enable(hal.stream.type != StreamType_MPG);
-                break;
-
-            case 'h':                                   // "toggle" jog mode
-                jogMode = jogMode == JogMode_Step ? JogMode_Fast : (jogMode == JogMode_Fast ? JogMode_Slow : JogMode_Step);
-                break;
-            case 'm':                                   // cycle jog modifier
-                jogModify = jogModify == JogModify_001 ? JogModify_1 : (jogModify == JogModify_1 ? JogModify_01 : JogModify_001);
-                break;
-
-            case 'H':                                   // Home axes
-                strcpy(command, "$H");
-                break;
-
-         // Pass most of the top bit set commands trough unmodified
-
-            case CMD_OVERRIDE_FEED_RESET:
-            case CMD_OVERRIDE_FEED_COARSE_PLUS:
-            case CMD_OVERRIDE_FEED_COARSE_MINUS:
-            case CMD_OVERRIDE_FEED_FINE_PLUS:
-            case CMD_OVERRIDE_FEED_FINE_MINUS:
-            case CMD_OVERRIDE_RAPID_RESET:
-            case CMD_OVERRIDE_RAPID_MEDIUM:
-            case CMD_OVERRIDE_RAPID_LOW:
-                enqueue_feed_override(keycode);
-                break;
-
-            case CMD_OVERRIDE_FAN0_TOGGLE:
-            case CMD_OVERRIDE_COOLANT_FLOOD_TOGGLE:
-            case CMD_OVERRIDE_COOLANT_MIST_TOGGLE:
-            case CMD_OVERRIDE_SPINDLE_RESET:
-            case CMD_OVERRIDE_SPINDLE_COARSE_PLUS:
-            case CMD_OVERRIDE_SPINDLE_COARSE_MINUS:
-            case CMD_OVERRIDE_SPINDLE_FINE_PLUS:
-            case CMD_OVERRIDE_SPINDLE_FINE_MINUS:
-            case CMD_OVERRIDE_SPINDLE_STOP:
-                enqueue_accessory_override(keycode);               
-                break;
-            
-            case CMD_SAFETY_DOOR:
-            case CMD_OPTIONAL_STOP_TOGGLE:
-            case CMD_SINGLE_BLOCK_TOGGLE:
-            case CMD_PROBE_CONNECTED_TOGGLE:
-                grbl.enqueue_realtime_command(keycode);
-                break;
-
-         // Jogging now handled with counts.
-
-             case MACRORAISE:                           //  Macro 5
-                execute_macro(5); 
-                break;
-
-             case MACROLOWER:                           // Macro 6
-                execute_macro(6); 
-                break;             
-
-        }
-    }
-
-    grbl.enqueue_gcode((char *)command);
-
-}
-
-static void i2c_enqueue_keycode (char c)
-{
-    uint32_t bptr = (keybuf.head + 1) & (KEYBUF_SIZE - 1);    // Get next head pointer
-
-    if(bptr != keybuf.tail) {           // If not buffer full
-        keybuf.buf[keybuf.head] = c;    // add data to buffer
-        keybuf.head = bptr;             // and update pointer
-        // Tell foreground process to process keycode
-        protocol_enqueue_rt_command(process_keycode);
-    }
+    status_packet->current_wcs = gc_state.modal.coord_system.id;
 }
 
 bool process_count_info (uint8_t * prev_count_ptr, uint8_t * count_ptr)
@@ -447,8 +264,8 @@ bool process_count_info (uint8_t * prev_count_ptr, uint8_t * count_ptr)
 
     bool cmd = 0;
     
-    Pendant_count_packet * count_packet = (Pendant_count_packet*) count_ptr;
-    Pendant_count_packet * previous_count_packet = (Pendant_count_packet*) prev_count_ptr;
+    pendant_count_packet_t * count_packet = (pendant_count_packet_t*) count_ptr;
+    pendant_count_packet_t * previous_count_packet = (pendant_count_packet_t*) prev_count_ptr;
 
     char command[35] = ""; 
 

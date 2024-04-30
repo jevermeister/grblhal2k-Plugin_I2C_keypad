@@ -38,34 +38,44 @@
 #define N_MACROS 7
 #endif
 
-#define KEYBUF_SIZE 8 // must be a power of 2
-#define KEYPAD_I2CADDR 0x49
-#define STATUSDATA_SIZE 256
+#define HALT_PRESSED                (1 << (0) )
+#define HOLD_PRESSED                (1 << (1) )
+#define CYCLE_START_PRESSED         (1 << (2) )
+#define ALT_HALT_PRESSED            (1 << (15) )
+#define ALT_HOLD_PRESSED            (1 << (16) )
+#define ALT_CYCLE_START_PRESSED     (1 << (17) )
 
-#define JOG_START   'R'
+#define SPIN_OVER_RESET_PRESSED     (1 << (7) )
+#define FEED_OVER_RESET_PRESSED     (1 << (8) )
+#define ALT_SPIN_OVER_RESET_PRESSED (1 << (22) )
+#define ALT_FEED_OVER_RESET_PRESSED (1 << (23) )
 
-#define MACROUP 0x18
-#define MACRODOWN 0x19
-#define MACROLEFT 0x1B
-#define MACRORIGHT 0x1A
-#define MACROLOWER  0x7D
-#define MACRORAISE 0x7C
-#define MACROHOME  0x8E
-#define RESET  0x7F
-#define UNLOCK 0x80
-#define SPINON 0x81
+#define SPINDLE_PRESSED             (1 << (3) )
+#define MIST_PRESSED                (1 << (4) )
+#define FLOOD_PRESSED               (1 << (5) )
+#define ALT_SPINDLE_PRESSED         (1 << (18) )
+#define ALT_MIST_PRESSED            (1 << (19) )
+#define ALT_FLOOD_PRESSED           (1 << (20) )
 
-typedef enum {
-    JogMode_Fast = 0,
-    JogMode_Slow,
-    JogMode_Step
-} jogmode_t;
+#define HOME_PRESSED                (1 << (6) )
+#define ALT_HOME_PRESSED            (1 << (21) )
 
-typedef enum {
-    JogModify_1 = 0,
-    JogModify_01,
-    JogModify_001
-} jogmodify_t;
+#define UP_PRESSED                  (1 << (9) )
+#define DOWN_PRESSED                (1 << (10) )
+#define LEFT_PRESSED                (1 << (11) )
+#define RIGHT_PRESSED               (1 << (12) )
+#define RAISE_PRESSED               (1 << (13) )
+#define LOWER_PRESSED               (1 << (14) )
+
+#define ALT_UP_PRESSED              (1 << (24) )
+#define ALT_DOWN_PRESSED            (1 << (25) )
+#define ALT_LEFT_PRESSED            (1 << (26) )
+#define ALT_RIGHT_PRESSED           (1 << (27) )
+#define ALT_RAISE_PRESSED           (1 << (28) )
+#define ALT_LOWER_PRESSED           (1 << (29) )
+
+void I2C_PendantRead (uint32_t i2cAddr, uint16_t memaddress, uint16_t size, uint8_t * data, keycode_callback_ptr callback);
+void I2C_PendantWrite (uint32_t i2cAddr, uint8_t *buf, uint16_t bytes);
 
 bool process_count_info (uint8_t * prev_count_ptr, uint8_t * count_ptr);
 void prepare_status_info (uint8_t * status_ptr);

@@ -66,7 +66,7 @@ static on_state_change_ptr on_state_change;
 #define WATCHDOG_DELAY 2000
 #define SEND_STATUS_DELAY 300
 #define SEND_STATUS_JOG_DELAY 100
-#define READ_COUNT_INTERVAL 60
+
 
 static bool is_executing = false;
 static char *command;
@@ -88,15 +88,11 @@ static uint8_t *count_ptr = (uint8_t*) &count_packet;
 static uint8_t *prev_count_ptr = (uint8_t*) &previous_count_packet;
 static uint8_t *status_ptr = (uint8_t*) &status_packet;
 
-
-
-static bool jogging = false, keyreleased = true;
 static jogmode_t jogMode = JogMode_Fast;
 static jogmodify_t jogModify = JogModify_1;
-static jog_settings_t jog;
 static keybuffer_t keybuf = {0};
 
-static bool cmd_process = false, keyreleased = true;
+static bool jogging = false, cmd_process = false, keyreleased = true;
 int32_t strobe_counter = 0;
 static bool pendant_attached = false;
 
@@ -104,9 +100,6 @@ static on_report_options_ptr on_report_options;
 static on_execute_realtime_ptr on_execute_realtime, on_execute_delay;
 static on_jogmode_changed_ptr on_jogmode_changed;
 static on_jogmodify_changed_ptr on_jogmodify_changed;
-
-static on_spindle_select_ptr on_spindle_select;
-spindle_ptrs_t *current_spindle = NULL;
 
 keypad_t keypad = {0};
 jog_settings_t jog;
@@ -395,12 +388,6 @@ static status_code_t disable_lock (void)
     return retval;
 }
 
-static bool onSpindleSelect (spindle_ptrs_t *spindle)
-{   
-    current_spindle = spindle;
-    return on_spindle_select == NULL || on_spindle_select(spindle);
-}
-
 static void count_msg (uint_fast16_t state)
 {
     #if 0
@@ -411,130 +398,15 @@ static void count_msg (uint_fast16_t state)
 
 static void send_status_info (void)
 {    
-    int32_t current_position[N_AXIS]; // Copy current state of the system position variable
-    float jog_modifier = 0;
-    float print_position[N_AXIS];
-    status_packet.coordinate.a = 0xffff;
-
-    spindle_ptrs_t *spindle;
-    spindle_state_t spindle_state;
-
     static uint32_t last_ms;
     uint32_t ms = hal.get_elapsed_ticks();
 
     if(ms < last_ms + 10) // don't spam the port
     return;
     
-    memcpy(current_position, sys.position, sizeof(sys.position));
+    prepare_status_info(status_ptr);
 
-    system_convert_array_steps_to_mpos(print_position, current_position);
-
-    uint_fast8_t idx;
-    float wco[N_AXIS];
-    for (idx = 0; idx < N_AXIS; idx++) {
-        // Apply work coordinate offsets and tool length offset to current position.
-        wco[idx] = gc_get_offset(idx);
-        print_position[idx] -= wco[idx];
-    }  
-    
-    status_packet.address = 0x01;
-    
-    switch(jogModify){
-        case JogModify_1:
-            jog_modifier = 1;
-        break;
-        case JogModify_01:
-            jog_modifier = 0.1;                    
-        break;
-        case JogModify_001:
-            jog_modifier = 0.01;                    
-        break;  
-    }
-    
-    switch (state_get()){
-        case STATE_ALARM:
-            status_packet.machine_state.state = 1;
-            break;
-        case STATE_ESTOP:
-            status_packet.machine_state.state = 1;
-            break;            
-        case STATE_CYCLE:
-            status_packet.machine_state.state = 2;
-            break;
-        case STATE_HOLD:
-            status_packet.machine_state.state = 3;
-            break;
-        case STATE_TOOL_CHANGE:
-            status_packet.machine_state.state = 4;
-            break;
-        case STATE_IDLE:
-            status_packet.machine_state.state = 5;
-            break;
-        case STATE_HOMING:
-            status_packet.machine_state.state = 6;
-            break;   
-        case STATE_JOG:
-            status_packet.machine_state.state = 7;
-            break;                                    
-        default :
-            status_packet.machine_state.state = 0x0F;
-            break;                                                        
-    }
-
-    status_packet.machine_state.mode = settings.mode;
-    status_packet.machine_state.disconnected = 0;
-
-    //check the probe pin, if it is asserted, add it to the state
-
-    status_packet.coolant_state = hal.coolant.get_state();
-    status_packet.feed_override = sys.override.feed_rate;
-
-    spindle = spindle_get(0);
-
-    if(spindle->get_state)
-        spindle_state = spindle->get_state(spindle);
-
-    if(spindle->cap.variable) {
-        status_packet.spindle_rpm = spindle_state.on ? lroundf(spindle->param->rpm_overridden) : 0;
-        if(spindle->get_data)
-            status_packet.spindle_rpm = spindle->get_data(SpindleData_RPM)->rpm;
-    } else
-        status_packet.spindle_rpm = spindle->param->rpm;
-
-    status_packet.spindle_override = (uint32_t)spindle->param->override_pct;
-    status_packet.spindle_stop = spindle_state.on;        
-
-    status_packet.feed_rate = st_get_realtime_rate();
-
-    status_packet.status_code = (uint8_t) sys.alarm;
-    status_packet.home_state.value = (uint8_t)(sys.homing.mask & sys.homed.mask);
-    status_packet.jog_mode.value = (uint8_t) jogMode << 4 | (uint8_t) jogModify;
-    status_packet.coordinate.x = print_position[0];
-    status_packet.coordinate.y = print_position[1];
-    status_packet.coordinate.z = print_position[2];
-    #if N_AXIS > 3
-    status_packet.coordinate.a = print_position[3];
-    #else
-    status_packet.a_coordinate = 0xFFFFFFFF;
-    #endif
-
-    status_packet.feed_rate = st_get_realtime_rate();
-    
-    switch(jogMode){
-        case JogMode_Slow:
-        status_packet.jog_stepsize = jog.slow_speed * jog_modifier;
-        break;
-        case JogMode_Fast:
-        status_packet.jog_stepsize = jog.fast_speed * jog_modifier;
-        break;
-        default:
-        status_packet.jog_stepsize = jog.step_distance * jog_modifier;
-        break;
-    }
-    
-    status_packet.current_wcs = gc_state.modal.coord_system.id;       
-
-    i2c_send (KEYPAD_I2CADDR, status_ptr, sizeof(machine_status_packet_t), 0); 
+    I2C_PendantWrite (KEYPAD_I2CADDR, status_ptr, sizeof(machine_status_packet_t));
 
     last_ms = ms;   
 }
@@ -796,10 +668,8 @@ static void read_count_info (sys_state_t state)
     cmd_process = process_count_info(prev_count_ptr, count_ptr);   
     //process_count_info(prev_count_ptr, count_ptr); 
 
-    if (count_packet.buttons > 0){
-        clear_buttons();
         hal.delay_ms(10, NULL);
-    }
+    
     send_status_info();
     previous_count_packet = count_packet;
 }
@@ -844,7 +714,7 @@ ISR_CODE bool ISR_FUNC(keypad_enqueue_keycode)(char c)
 
 #if KEYPAD_ENABLE == 1
 
-ISR_CODE static void ISR_FUNC(i2c_process_counts)(char c)
+ISR_CODE static void ISR_FUNC(i2c_process_counts)()
 {   
     protocol_enqueue_rt_command(read_count_info);    
 }
@@ -903,7 +773,8 @@ ISR_CODE bool ISR_FUNC(keypad_strobe_handler)(uint_fast8_t id, bool keydown)
     keyreleased = !keydown;
 
     if(keydown){
-        i2c_get_keycode(KEYPAD_I2CADDR, i2c_enqueue_keycode);
+        //i2c_get_keycode(KEYPAD_I2CADDR, i2c_enqueue_keycode);
+        I2C_PendantRead(KEYPAD_I2CADDR,0,sizeof(pendant_count_packet_t), count_ptr, i2c_process_counts);
     }
 
     else if(jogging) {
