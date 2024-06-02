@@ -409,7 +409,7 @@ static void send_status_info (void)
     float wco[N_AXIS];
     for (idx = 0; idx < N_AXIS; idx++) {
         // Apply work coordinate offsets and tool length offset to current position.
-        wco[idx] = gc_get_offset(idx);
+        wco[idx] = gc_get_offset(idx,0);
         print_position[idx] -= wco[idx];
     }  
     
