@@ -269,7 +269,7 @@ static setting_details_t keypad_setting_details = {
     .restore = keypad_settings_restore,
     .save = keypad_settings_save
 };
-
+#if MACRO_SETTINGS_REMOVED_FOR_NOW
 // Write settings to non volatile storage (NVS).
 static void macro_settings_save (void)
 {
@@ -320,7 +320,7 @@ static setting_details_t macro_setting_details = {
     .load = macro_settings_load,
     .restore = macro_settings_restore
 };
-
+#endif
 // Returns 0 if no keycode enqueued
 static char keypad_get_keycode (void)
 {
@@ -911,8 +911,8 @@ static void warning_msg (uint_fast16_t state)
 bool keypad_init (void)
 {
     if(hal.irq_claim(IRQ_I2C_Strobe, 0, keypad_strobe_handler) && 
-      (keypad_nvs_address = nvs_alloc(sizeof(jog_settings_t))) && 
-      (macro_nvs_address = nvs_alloc(sizeof(macro_settings_t)))) {
+      (keypad_nvs_address = nvs_alloc(sizeof(jog_settings_t)))/* && 
+      (macro_nvs_address = nvs_alloc(sizeof(macro_settings_t)))*/) {
     //if(hal.irq_claim(IRQ_I2C_Strobe, 0, keypad_strobe_handler)){
 
         // Hook into the driver reset chain so we
@@ -931,7 +931,7 @@ bool keypad_init (void)
         grbl.on_execute_delay = keypad_poll_delay;
 
         settings_register(&keypad_setting_details); 
-        settings_register(&macro_setting_details);     
+        //settings_register(&macro_setting_details);     
         
         on_jogmode_changed = keypad.on_jogmode_changed;
         keypad.on_jogmode_changed = jogmode_changed;
